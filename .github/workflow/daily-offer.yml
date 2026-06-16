@@ -1,0 +1,48 @@
+name: SHA Daily Offer — Social Auto-Post
+
+on:
+  schedule:
+    - cron: "0 13 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install sharp
+
+      - name: Generate today's posts with Claude (Agent 1)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node generate_posts.js
+
+      - name: Render the branded offer image
+        run: node generate_image.js
+
+      - name: Commit image + posts so the image URL is public BEFORE posting
+        run: |
+          git config user.name "sha-bot"
+          git config user.email "bot@smarterhustleacademy.com"
+          mkdir -p posted-log
+          cp today_posts.json "posted-log/$(date +%Y-%m-%d).json" || true
+          git add today_image.png today_posts.json posted-log/ || true
+          git commit -m "Daily offer assets $(date +%Y-%m-%d)" || echo "nothing to commit"
+          git push || echo "no push"
+
+      - name: Publish to social platforms via Postproxy
+        env:
+          POSTPROXY_API_KEY: ${{ secrets.POSTPROXY_API_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node post_to_socials.js
