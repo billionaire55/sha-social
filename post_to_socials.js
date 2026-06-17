@@ -3,18 +3,11 @@
 // publishes via the Postproxy unified API. No server to host — pure API calls.
 //
 // Requires env: POSTPROXY_API_KEY, and (in GitHub Actions) GITHUB_REPOSITORY.
-//
-// ONE-TIME SETUP:
-//   1. Sign up free at app.postproxy.dev
-//   2. Connect your accounts under Profiles (Facebook Page, LinkedIn, X/Twitter,
-//      Pinterest, Instagram). Each uses the platform's own OAuth login.
-//   3. Settings > API Keys > create a key, copy it into the POSTPROXY_API_KEY secret.
-// That's it — no channel IDs to hunt down. Postproxy's "profiles" parameter accepts
-// platform names directly and uses the first connected profile for that platform.
 
 const fs = require("fs");
 
 const BASE_URL = "https://api.postproxy.dev/api/posts";
+const FACEBOOK_PAGE_ID = "136127503142783"; // Paramount Business Online Multiplex
 
 // Map our internal platform keys -> Postproxy platform IDs
 const PLATFORM_ID = {
@@ -58,6 +51,9 @@ async function postOne(platform, text, img) {
   const body = { post: { body: text }, profiles: [platformId] };
   if (img && (needsImg || IMAGE_OPTIONAL.has(platform))) {
     body.media = [img];
+  }
+  if (platform === "facebook") {
+    body.platforms = { facebook: { page_id: FACEBOOK_PAGE_ID } };
   }
 
   const res = await fetch(BASE_URL, {
