@@ -41,7 +41,7 @@ function contentFor(platform, p) {
   }
 }
 
-async function postOne(platform, text, img) {
+async function postOne(platform, text, img, meta) {
   const platformId = PLATFORM_ID[platform];
   if (!platformId) { console.log(`SKIP ${platform}: unsupported platform`); return; }
 
@@ -54,6 +54,13 @@ async function postOne(platform, text, img) {
   }
   if (platform === "facebook") {
     body.platforms = { facebook: { page_id: FACEBOOK_PAGE_ID } };
+  }
+  if (platform === "x") {
+    // X rejects URLs in the main tweet body — strip any URL out of the
+    // generated text, then post the link as a one-tweet thread reply.
+    const stripped = text.replace(/https?:\/\/\S+/g, "").replace(/[\s:–—-]+$/, "").trim();
+    body.post.body = stripped;
+    body.thread = [{ body: meta.url }];
   }
 
   const res = await fetch(BASE_URL, {
@@ -81,7 +88,7 @@ async function main() {
   for (const platform of platforms) {
     const text = contentFor(platform, p);
     if (!text) { console.log(`SKIP ${platform}: no content`); continue; }
-    await postOne(platform, text, img);
+    await postOne(platform, text, img, p._meta);
   }
 }
 
