@@ -6,7 +6,7 @@
     "url": "https://smarterhustleacademy.com/start",
     "hook": "Mindset Sunday: one income stream is a single point of failure. Soft sell, big-picture framing.",
     "platforms": [
-      "facebook", "X"
+      "facebook", "x"
     ]
   },
   "1": {
@@ -15,7 +15,7 @@
     "url": "https://smarterhustleacademy.com/start",
     "hook": "Monday Money Move: you don't need a course, you need a hook that works tonight. Costs less than lunch.",
     "platforms": [
-      "facebook", "X"
+      "facebook", "x"
     ]
   },
   "2": {
@@ -24,16 +24,16 @@
     "url": "https://smarterhustleacademy.com/start",
     "hook": "Core Skill Tuesday: starting a side hustle used to cost thousands. The full map is $27.",
     "platforms": [
-      "facebook", "X"
+      "facebook", "x"
     ]
   },
-  "3": 
+  "3": {
     "product": "48-Hour Income System (Tier 1)",
     "price": "$27",
     "url": "https://smarterhustleacademy.com/start",
     "hook": "System Thursday: two days, one weekend, a real system \u2014 not theory.",
     "platforms": [
-      "facebook", "X"
+      "facebook", "x"
     ]
   },
   "4": {
@@ -42,7 +42,7 @@
     "url": "https://smarterhustleacademy.com/start",
     "hook": "Payday Friday: prices went up, your paycheck didn't. The bundle is the third option \u2014 and bundling is built-in savings.",
     "platforms": [
-      "facebook", "X"
+      "facebook", "x"
     ]
   },
   "5": {
@@ -51,7 +51,7 @@
     "url": "https://smarterhustleacademy.com/start",
     "hook": "Free Win Saturday: 38 steps, 8 pages, $0. Your weekend project, mapped. Builds the email list.",
     "platforms": [
-      "facebook", "X"
+      "facebook", "x"
     ]
   },
   "6": {
@@ -60,7 +60,7 @@
     "url": "https://smarterhustleacademy.com/start",
     "hook": "Wildcard: the affordable full-system play for anyone who found you this week.",
     "platforms": [
-      "facebook"
+      "facebook", "x"
     ]
   }
 }
