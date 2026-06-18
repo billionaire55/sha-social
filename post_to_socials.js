@@ -8,6 +8,7 @@ const fs = require("fs");
 
 const BASE_URL = "https://api.postproxy.dev/api/posts";
 const FACEBOOK_PAGE_ID = "136127503142783"; // Paramount Business Online Multiplex
+const PINTEREST_BOARD_ID = "1109011545681300939"; // Side Hustle Ideas board
 
 // Map our internal platform keys -> Postproxy platform IDs
 const PLATFORM_ID = {
@@ -41,7 +42,7 @@ function contentFor(platform, p) {
   }
 }
 
-async function postOne(platform, text, img, meta) {
+async function postOne(platform, text, img, p) {
   const platformId = PLATFORM_ID[platform];
   if (!platformId) { console.log(`SKIP ${platform}: unsupported platform`); return; }
 
@@ -52,15 +53,27 @@ async function postOne(platform, text, img, meta) {
   if (img && (needsImg || IMAGE_OPTIONAL.has(platform))) {
     body.media = [img];
   }
+
   if (platform === "facebook") {
     body.platforms = { facebook: { page_id: FACEBOOK_PAGE_ID } };
   }
+
   if (platform === "x") {
     // X rejects URLs in the main tweet body — strip any URL out of the
     // generated text, then post the link as a one-tweet thread reply.
     const stripped = text.replace(/https?:\/\/\S+/g, "").replace(/[\s:–—-]+$/, "").trim();
     body.post.body = stripped;
-    body.thread = [{ body: meta.url }];
+    body.thread = [{ body: p._meta.url }];
+  }
+
+  if (platform === "pinterest") {
+    body.platforms = {
+      pinterest: {
+        board_id: PINTEREST_BOARD_ID,
+        title: (p.pinterest_title || "").slice(0, 100),
+        destination_link: p._meta.url
+      }
+    };
   }
 
   const res = await fetch(BASE_URL, {
@@ -88,7 +101,7 @@ async function main() {
   for (const platform of platforms) {
     const text = contentFor(platform, p);
     if (!text) { console.log(`SKIP ${platform}: no content`); continue; }
-    await postOne(platform, text, img, p._meta);
+    await postOne(platform, text, img, p);
   }
 }
 
