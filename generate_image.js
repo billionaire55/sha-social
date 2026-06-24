@@ -145,7 +145,7 @@ async function main() {
   const meta = p._meta;
 
   const headline    = meta.product;
-  const subline     = meta.hook.replace(/^[^:]+:\s*/, "").split(".")[0].trim();
+  const subline = p.graphic_subline || p.graphic_headline || meta.product;
   const description = `Get instant access — ${meta.price === "$0" ? "free download" : "one-time payment, yours forever"}.`;
   const price       = meta.price === "$0" ? "FREE" : meta.price;
 
