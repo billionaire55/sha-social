@@ -21,7 +21,7 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: npm install sharp @canva/connect-api-sdk
+        run: npm install sharp
 
       - name: Generate today's posts with Claude (Agent 1)
         env:
