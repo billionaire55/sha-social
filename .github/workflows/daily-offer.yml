@@ -21,7 +21,7 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: npm install sharp
+        run: npm install sharp @canva/connect-api-sdk
 
       - name: Generate today's posts with Claude (Agent 1)
         env:
@@ -29,6 +29,9 @@ jobs:
         run: node generate_posts.js
 
       - name: Render the branded offer image
+        env:
+          CANVA_CLIENT_ID: ${{ secrets.CANVA_CLIENT_ID }}
+          CANVA_CLIENT_SECRET: ${{ secrets.CANVA_CLIENT_SECRET }}
         run: node generate_image.js
 
       - name: Commit image + posts so the image URL is public BEFORE posting
