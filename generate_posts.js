@@ -28,7 +28,7 @@ OUTPUT: Respond with ONLY a valid JSON object, no markdown fences, no commentary
   "pinterest_title": "under 100 chars, keyword-rich",
   "pinterest_description": "under 400 chars, evergreen searchable terms, CTA",
   "tiktok_script": "60-90 sec faceless script: hook, 3 beats, CTA. (Manual/video use.)",
-  "graphic_headline": "punchy hook for the post image, under 40 chars, title case",
+  "graphic_headline": "punchy hook for the post image, under 40 chars, title case, do NOT include the price",
   "graphic_subline": "supporting line for the image, under 60 chars"
 }
 Escape characters correctly for JSON.
