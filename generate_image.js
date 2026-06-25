@@ -67,12 +67,12 @@ function svg(p) {
 
   // Layout — stack elements top to bottom in body
   const DIVIDER_Y  = BODY_TOP;
-  const SUBLINE_Y  = DIVIDER_Y + 52;
-  const PRICE_Y    = SUBLINE_Y + sLines.length * S_LH + 56;
+  const SUBLINE_Y  = DIVIDER_Y + 40;
+  const PRICE_Y    = SUBLINE_Y + sLines.length * S_LH + 40;
   const PRICE_H    = 100;
   const PRICE_W    = price === "FREE" ? 260 : 220;
-  const DESC_Y     = PRICE_Y + PRICE_H + 48;
-  const URL_Y      = H - FOOTER_H - 96;
+  const DESC_Y     = PRICE_Y + PRICE_H + 44;
+  const URL_Y      = DESC_Y + 80;
   const URL_H      = 80;
 
   const footerIcons = [
