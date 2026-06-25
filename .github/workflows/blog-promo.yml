@@ -1,0 +1,45 @@
+name: SHA Blog Promo Post
+
+on:
+  repository_dispatch:
+    types: [blog-published]
+
+permissions:
+  contents: write
+
+jobs:
+  promo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install sharp
+
+      - name: Generate blog promo image
+        env:
+          BLOG_TITLE: ${{ github.event.client_payload.title }}
+          BLOG_EXCERPT: ${{ github.event.client_payload.excerpt }}
+        run: node --input-type=module < generate-blog-promo-card.mjs
+
+      - name: Commit promo image
+        run: |
+          git config user.name "sha-bot"
+          git config user.email "bot@smarterhustleacademy.com"
+          git add blog_promo_image.png || true
+          git commit -m "Blog promo image $(date +%Y-%m-%d)" || echo "nothing to commit"
+          git push || echo "no push"
+
+      - name: Post to social platforms
+        env:
+          POSTPROXY_API_KEY: ${{ secrets.POSTPROXY_API_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          BLOG_TITLE: ${{ github.event.client_payload.title }}
+          BLOG_URL: ${{ github.event.client_payload.url }}
+        run: node --input-type=module < post-blog-promo.mjs
