@@ -1,34 +1,32 @@
 // post_to_socials.js
-// Reads today_posts.json + today_image.png (already committed to the repo) and
-// publishes via the Postproxy unified API. No server to host — pure API calls.
-//
-// Requires env: POSTPROXY_API_KEY, and (in GitHub Actions) GITHUB_REPOSITORY.
+const fs   = require("fs");
+const BASE_URL           = "https://api.postproxy.dev/api/posts";
+const FACEBOOK_PAGE_ID   = "136127503142783";
+const PINTEREST_BOARD_ID = "1109011545681300939";
 
-const fs = require("fs");
-
-const BASE_URL = "https://api.postproxy.dev/api/posts";
-const FACEBOOK_PAGE_ID = "136127503142783"; // Paramount Business Online Multiplex
-const PINTEREST_BOARD_ID = "1109011545681300939"; // Side Hustle Ideas board
-
-// Map our internal platform keys -> Postproxy platform IDs
 const PLATFORM_ID = {
   facebook:  "facebook",
   linkedin:  "linkedin",
-  x:         "twitter",   // Postproxy's platform id for X is "twitter"
+  x:         "twitter",
   instagram: "instagram",
-  pinterest: "pinterest"
-  // tiktok intentionally omitted: needs video + a completed TikTok audit.
+  pinterest: "pinterest",
+  tiktok:    "tiktok"
 };
 
-// Platforms that REQUIRE an image — post is skipped if the image is missing
 const IMAGE_REQUIRED = new Set(["instagram", "pinterest"]);
-// Platforms that work fine with or without an image
 const IMAGE_OPTIONAL = new Set(["facebook", "x"]);
+const VIDEO_REQUIRED = new Set(["tiktok"]);
 
 function imageUrl() {
-  const repo = process.env.GITHUB_REPOSITORY; // e.g. billionaire55/sha-social
+  const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) return null;
   return `https://raw.githubusercontent.com/${repo}/main/today_image.png`;
+}
+
+function videoUrl() {
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (!repo) return null;
+  return `https://raw.githubusercontent.com/${repo}/main/today_tiktok.mp4`;
 }
 
 function contentFor(platform, p) {
@@ -38,19 +36,29 @@ function contentFor(platform, p) {
     case "x":         return p.x;
     case "instagram": return p.instagram;
     case "pinterest": return `${p.pinterest_title}\n\n${p.pinterest_description}`;
+    case "tiktok":    return p.instagram || p.facebook;
     default:          return null;
   }
 }
 
-async function postOne(platform, text, img, p) {
+async function postOne(platform, text, p) {
   const platformId = PLATFORM_ID[platform];
-  if (!platformId) { console.log(`SKIP ${platform}: unsupported platform`); return; }
+  if (!platformId) { console.log(`SKIP ${platform}: unsupported`); return; }
+
+  const img  = imageUrl();
+  const vid  = videoUrl();
 
   const needsImg = IMAGE_REQUIRED.has(platform);
-  if (needsImg && !img) { console.log(`SKIP ${platform}: image required but missing`); return; }
+  const needsVid = VIDEO_REQUIRED.has(platform);
+
+  if (needsImg && !img) { console.log(`SKIP ${platform}: image required`); return; }
+  if (needsVid && !vid) { console.log(`SKIP ${platform}: video required`); return; }
 
   const body = { post: { body: text }, profiles: [platformId] };
-  if (img && (needsImg || IMAGE_OPTIONAL.has(platform))) {
+
+  if (needsVid) {
+    body.media = [vid];
+  } else if (img && (needsImg || IMAGE_OPTIONAL.has(platform))) {
     body.media = [img];
   }
 
@@ -59,8 +67,6 @@ async function postOne(platform, text, img, p) {
   }
 
   if (platform === "x") {
-    // X rejects URLs in the main tweet body — strip any URL out of the
-    // generated text, then post the link as a one-tweet thread reply.
     const stripped = text.replace(/https?:\/\/\S+/g, "").replace(/[\s:–—-]+$/, "").trim();
     body.post.body = stripped;
     body.thread = [{ body: p._meta.url }];
@@ -89,19 +95,18 @@ async function postOne(platform, text, img, p) {
     console.error(`FAIL ${platform}: ${res.status} ${await res.text()}`);
   } else {
     const data = await res.json();
-    console.log(`POSTED ${platform}${body.media ? " (with image)" : ""} -> id ${data.id || "?"}`);
+    console.log(`POSTED ${platform}${body.media ? " (with media)" : ""} -> id ${data.id || "?"}`);
   }
 }
 
 async function main() {
   const p = JSON.parse(fs.readFileSync("today_posts.json", "utf8"));
   const platforms = (p._meta && p._meta.platforms) || [];
-  const img = fs.existsSync("today_image.png") ? imageUrl() : null;
 
   for (const platform of platforms) {
     const text = contentFor(platform, p);
     if (!text) { console.log(`SKIP ${platform}: no content`); continue; }
-    await postOne(platform, text, img, p);
+    await postOne(platform, text, p);
   }
 }
 
