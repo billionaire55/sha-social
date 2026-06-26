@@ -29,10 +29,19 @@ jobs:
         run: node generate_posts.js
 
       - name: Render the branded offer image
-        env:
-          CANVA_CLIENT_ID: ${{ secrets.CANVA_CLIENT_ID }}
-          CANVA_CLIENT_SECRET: ${{ secrets.CANVA_CLIENT_SECRET }}
         run: node generate_image.js
+
+      - name: Render TikTok slideshow video
+        run: |
+          if node -e "
+            const p=require('./today_posts.json');
+            const platforms=(p._meta&&p._meta.platforms)||[];
+            process.exit(platforms.includes('tiktok')?0:1);
+          "; then
+            node --input-type=module < generate_tiktok.js
+          else
+            echo "TikTok not scheduled today — skipping."
+          fi
 
       - name: Commit image + posts so the image URL is public BEFORE posting
         run: |
@@ -40,7 +49,7 @@ jobs:
           git config user.email "bot@smarterhustleacademy.com"
           mkdir -p posted-log
           cp today_posts.json "posted-log/$(date +%Y-%m-%d).json" || true
-          git add today_image.png today_posts.json posted-log/ || true
+          git add today_image.png today_tiktok.mp4 today_posts.json posted-log/ || true
           git commit -m "Daily offer assets $(date +%Y-%m-%d)" || echo "nothing to commit"
           git push || echo "no push"
 
