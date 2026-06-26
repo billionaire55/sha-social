@@ -1,6 +1,5 @@
 name: SHA Daily Offer — Social Auto-Post
 
-
 on:
   schedule:
     - cron: "0 13 * * *"
@@ -21,11 +20,10 @@ jobs:
         with:
           node-version: "20"
 
-            - name: Install dependencies
+      - name: Install dependencies
         run: |
           npm install sharp
           sudo apt-get install -y ffmpeg
-
 
       - name: Generate today's posts with Claude (Agent 1)
         env:
