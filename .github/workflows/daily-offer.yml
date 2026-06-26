@@ -1,5 +1,6 @@
 name: SHA Daily Offer — Social Auto-Post
 
+
 on:
   schedule:
     - cron: "0 13 * * *"
