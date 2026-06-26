@@ -1,52 +1,52 @@
 {
-  "_comment": "Full rollout: facebook, x, linkedin, instagram all live. Pinterest needs board_id added to post_to_socials.js before it will work. TikTok intentionally excluded (needs video + audit).",
+  "_comment": "facebook + x daily. linkedin 3x/week. instagram + pinterest 3x/week staggered. tiktok Mon/Wed/Fri.",
   "0": {
     "product": "The Passive Income Blueprint",
     "price": "$17",
     "url": "https://smarterhustleacademy.com/start",
-    "hook": "Mindset Sunday: one income stream is a single point of failure. Soft sell, big-picture framing.",
-    "platforms": ["facebook", "x", "linkedin", "instagram", "pinterest"]
+    "hook": "Mindset Sunday: one income stream is a single point of failure.",
+    "platforms": ["facebook", "x", "pinterest"]
   },
   "1": {
     "product": "30 Proven TikTok Hook Formulas",
     "price": "$9",
     "url": "https://smarterhustleacademy.com/start",
-    "hook": "Monday Money Move: you don't need a course, you need a hook that works tonight. Costs less than lunch.",
-    "platforms": ["facebook", "x", "linkedin", "instagram", "pinterest"]
+    "hook": "Monday Money Move: you don't need a course, you need a hook that works tonight.",
+    "platforms": ["facebook", "x", "linkedin", "tiktok"]
   },
   "2": {
     "product": "The Complete Digital Hustle Stack Guide",
     "price": "$27",
     "url": "https://smarterhustleacademy.com/start",
-    "hook": "Core Skill Tuesday: starting a side hustle used to cost thousands. The full map is $27.",
-    "platforms": ["facebook", "x", "linkedin", "instagram", "pinterest"]
+    "hook": "Core Skill Tuesday: starting a side hustle used to cost thousands.",
+    "platforms": ["facebook", "x", "instagram", "pinterest"]
   },
   "3": {
     "product": "48-Hour Income System (Tier 1)",
     "price": "$27",
     "url": "https://smarterhustleacademy.com/start",
-    "hook": "System Thursday: two days, one weekend, a real system \u2014 not theory.",
-    "platforms": ["facebook", "x", "linkedin", "instagram", "pinterest"]
+    "hook": "System Wednesday: two days, one weekend, a real system.",
+    "platforms": ["facebook", "x", "linkedin", "tiktok"]
   },
   "4": {
     "product": "Fast Start Bundle",
     "price": "$37",
     "url": "https://smarterhustleacademy.com/start",
-    "hook": "Payday Friday: prices went up, your paycheck didn't. The bundle is the third option \u2014 and bundling is built-in savings.",
-    "platforms": ["facebook", "x", "linkedin", "instagram", "pinterest"]
+    "hook": "Payday Thursday: prices went up, your paycheck didn't.",
+    "platforms": ["facebook", "x", "instagram", "pinterest"]
   },
   "5": {
     "product": "Passive Income Quick-Start Checklist (FREE)",
     "price": "$0",
     "url": "https://smarterhustleacademy.com/start",
-    "hook": "Free Win Saturday: 38 steps, 8 pages, $0. Your weekend project, mapped. Builds the email list.",
-    "platforms": ["facebook", "x", "linkedin", "instagram", "pinterest"]
+    "hook": "Free Win Friday: 38 steps, 8 pages, $0.",
+    "platforms": ["facebook", "x", "linkedin", "instagram", "tiktok"]
   },
   "6": {
     "product": "The Complete Digital Hustle Stack Guide",
     "price": "$27",
     "url": "https://smarterhustleacademy.com/start",
-    "hook": "Wildcard: the affordable full-system play for anyone who found you this week.",
-    "platforms": ["facebook", "x", "linkedin", "instagram", "pinterest"]
+    "hook": "Wildcard Saturday: the affordable full-system play.",
+    "platforms": ["facebook", "x", "instagram"]
   }
 }
