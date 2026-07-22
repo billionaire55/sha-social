@@ -22,7 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install sharp
+          npm install sharp @higgsfield/client
           sudo apt-get install -y ffmpeg
 
       - name: Generate today's posts with Claude (Agent 1)
@@ -33,14 +33,16 @@ jobs:
       - name: Render the branded offer image
         run: node generate_image.js
 
-      - name: Render TikTok slideshow video
+      - name: Render TikTok mascot video
+        env:
+          HF_CREDENTIALS: ${{ secrets.HF_CREDENTIALS }}
         run: |
           if node -e "
             const p=require('./today_posts.json');
             const platforms=(p._meta&&p._meta.platforms)||[];
             process.exit(platforms.includes('tiktok')?0:1);
           "; then
-            node --input-type=module < generate_tiktok.js
+            node generate_tiktok.js
           else
             echo "TikTok not scheduled today — skipping."
           fi
