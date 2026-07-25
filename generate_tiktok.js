@@ -1,20 +1,44 @@
 // generate_tiktok.js
 // Renders a mascot video for TikTok/Shorts using fal.ai (Kling for animation,
-// ElevenLabs for voice), then assembles it with ffmpeg (wrapped captions + audio + concat).
+// ElevenLabs for voice), then assembles it with ffmpeg (captions + audio + concat).
 //
 // Output: today_tiktok.mp4
 // Requires: assets/mascot.png committed to the repo (publicly reachable via raw.githubusercontent.com)
 // Requires env: FAL_KEY, GITHUB_REPOSITORY (already available in Actions)
 //
+// CACHING: generated voice + video for each scene are cached in .cache/tiktok/
+// keyed by the exact narration text (+voice speed). Re-running with the SAME
+// script text reuses the cached fal.ai output instead of paying again — so you
+// can iterate on captions/timing/ffmpeg logic for free. Set FORCE_REGEN=1 to
+// force fresh generation.
+//
+// CAPTIONS: requests per-word timestamps from ElevenLabs (timestamps: true)
+// and uses them to time captions to what's actually being said. fal's exact
+// response shape for this field isn't fully documented publicly, so this is
+// wrapped defensively — if the timestamp data doesn't parse as expected, it
+// automatically falls back to a proportional (word-count-weighted) split
+// instead of crashing a paid run.
+//
+// DURATION: Kling only supports 5s or 10s clips (confirmed via fal docs) —
+// there is no native 15s option. If the generated audio runs longer than the
+// Kling clip, the last frame is frozen (ffmpeg tpad) to cover the remainder
+// so the video never cuts off before the voiceover finishes (e.g. the price
+// mention at the end of scene 2).
+//
 // KNOWN LIMITATION: Kling's mouth animation is prompt-driven, not audio-driven.
-// It does not lip-sync to the generated voice track. This is an accepted
-// trade-off (gesture-forward animation) rather than a bug — true audio-driven
-// lip sync would require different, dedicated tooling.
+// It does not lip-sync to the generated voice track — an accepted trade-off,
+// not a bug in this script.
 
 const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
 const https = require("https");
 const { execSync } = require("child_process");
 const { fal } = require("@fal-ai/client");
+
+const CACHE_DIR = path.join(process.cwd(), ".cache", "tiktok");
+const FORCE_REGEN = process.env.FORCE_REGEN === "1";
+const VOICE_SPEED = 0.85; // valid range 0.7-1.2, default 1
 
 function downloadFile(url, outPath) {
   return new Promise((resolve, reject) => {
@@ -27,13 +51,11 @@ function downloadFile(url, outPath) {
   });
 }
 
-// Public URL to the mascot still image, hosted directly from this repo.
 function mascotImageUrl() {
   const repo = process.env.GITHUB_REPOSITORY || "billionaire55/sha-social";
   return `https://raw.githubusercontent.com/${repo}/main/assets/mascot.png`;
 }
 
-// Build two narration lines from today's generated post copy.
 function buildScript(posts) {
   const meta = posts._meta;
   const price = meta.price === "$0" ? "free" : meta.price;
@@ -55,10 +77,10 @@ const FRAME_W = 1080;
 const FRAME_H = 1920;
 const FONT_SIZE = 42;
 const LINE_HEIGHT = FONT_SIZE + 14;
-const MAX_CHARS_PER_LINE = 22; // conservative — guarantees fit at FONT_SIZE within FRAME_W
-const CAPTION_BOTTOM_MARGIN = 360; // px from bottom edge to the LAST line's baseline
+const MAX_CHARS_PER_LINE = 22;
+const CAPTION_BOTTOM_MARGIN = 360;
+const WORDS_PER_CAPTION = 3; // smaller chunks = more visible movement/sync
 
-// Word-wrap plain text to a max character width per line.
 function wrapLines(text, maxChars) {
   const words = String(text).split(/\s+/).filter(Boolean);
   const lines = [];
@@ -76,15 +98,6 @@ function wrapLines(text, maxChars) {
   return lines;
 }
 
-// Split a scene's narration into 2 shorter caption chunks so the caption
-// changes partway through the clip instead of sitting frozen the whole time.
-function splitIntoChunks(text) {
-  const words = String(text).split(/\s+/).filter(Boolean);
-  if (words.length <= 5) return [text];
-  const mid = Math.ceil(words.length / 2);
-  return [words.slice(0, mid).join(" "), words.slice(mid).join(" ")];
-}
-
 function escForDrawtext(s) {
   return String(s)
     .replace(/\\/g, "\\\\")
@@ -93,13 +106,7 @@ function escForDrawtext(s) {
     .replace(/%/g, "\\%");
 }
 
-// Build ONE drawtext filter per wrapped line (never multi-line text in a
-// single drawtext call — ffmpeg's text_w/centering for multi-line strings
-// is unreliable across versions and was causing captions to run off-frame).
-// Each line gets its own explicit y position, stacked upward from a fixed
-// bottom margin, and is only visible during [start, end] seconds.
-function captionFilters(text, start, end) {
-  const lines = wrapLines(text, MAX_CHARS_PER_LINE);
+function drawtextForLines(lines, start, end) {
   const totalHeight = lines.length * LINE_HEIGHT;
   const firstLineY = FRAME_H - CAPTION_BOTTOM_MARGIN - totalHeight;
 
@@ -114,32 +121,135 @@ function captionFilters(text, start, end) {
   });
 }
 
-function ffprobeDuration(path) {
+// Try to build caption groups from ElevenLabs word-level timestamps.
+// Returns null if the shape doesn't match what we expect, so the caller
+// can fall back safely instead of crashing.
+function captionsFromTimestamps(rawTimestamps, totalDuration) {
+  if (!Array.isArray(rawTimestamps) || rawTimestamps.length === 0) return null;
+
+  const words = rawTimestamps.map(t => ({
+    word: t.word ?? t.text ?? t.char ?? "",
+    start: t.start ?? t.start_time ?? t.timestamp_start ?? null,
+    end: t.end ?? t.end_time ?? t.timestamp_end ?? null
+  }));
+
+  if (words.some(w => !w.word || w.start === null || w.end === null)) return null;
+
+  const groups = [];
+  for (let i = 0; i < words.length; i += WORDS_PER_CAPTION) {
+    const slice = words.slice(i, i + WORDS_PER_CAPTION);
+    groups.push({
+      text: slice.map(w => w.word).join(" ").trim(),
+      start: slice[0].start,
+      end: slice[slice.length - 1].end
+    });
+  }
+  return groups;
+}
+
+// Fallback: split into small groups, timed proportionally by word count
+// across the scene's actual audio duration (not real timing data, but far
+// closer than a flat 50/50 split).
+function captionsFromProportionalSplit(text, totalDuration) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const groups = [];
+  for (let i = 0; i < words.length; i += WORDS_PER_CAPTION) {
+    groups.push(words.slice(i, i + WORDS_PER_CAPTION).join(" "));
+  }
+  const each = totalDuration / groups.length;
+  return groups.map((text, i) => ({
+    text,
+    start: i * each,
+    end: (i + 1) * each
+  }));
+}
+
+function buildCaptionFilters(scene) {
+  const groups =
+    captionsFromTimestamps(scene.wordTimestamps, scene.audioDuration) ||
+    captionsFromProportionalSplit(scene.text, scene.audioDuration);
+
+  return groups
+    .flatMap(g => {
+      const lines = wrapLines(g.text, MAX_CHARS_PER_LINE);
+      return drawtextForLines(lines, g.start.toFixed(2), g.end.toFixed(2));
+    })
+    .join(",");
+}
+
+function ffprobeDuration(p) {
   const out = execSync(
-    `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${path}"`
+    `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${p}"`
   ).toString().trim();
   return parseFloat(out) || 5;
 }
 
+// --- Caching -----------------------------------------------------------
+
+function sceneCacheKey(line) {
+  return crypto
+    .createHash("sha256")
+    .update(line + "|" + VOICE_SPEED + "|" + mascotImageUrl())
+    .digest("hex")
+    .slice(0, 16);
+}
+
+function cachedScenePaths(key) {
+  const dir = path.join(CACHE_DIR, key);
+  return {
+    dir,
+    videoPath: path.join(dir, "video.mp4"),
+    audioPath: path.join(dir, "audio.mp3"),
+    metaPath: path.join(dir, "meta.json")
+  };
+}
+
+function loadFromCache(key) {
+  const { videoPath, audioPath, metaPath } = cachedScenePaths(key);
+  if (fs.existsSync(videoPath) && fs.existsSync(audioPath) && fs.existsSync(metaPath)) {
+    const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+    return {
+      videoPath,
+      audioPath,
+      audioDuration: meta.audioDuration,
+      text: meta.text,
+      wordTimestamps: meta.wordTimestamps || null
+    };
+  }
+  return null;
+}
+
+function saveToCache(key, scene) {
+  const { dir, videoPath, audioPath, metaPath } = cachedScenePaths(key);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.copyFileSync(scene.videoPath, videoPath);
+  fs.copyFileSync(scene.audioPath, audioPath);
+  fs.writeFileSync(
+    metaPath,
+    JSON.stringify(
+      { text: scene.text, audioDuration: scene.audioDuration, wordTimestamps: scene.wordTimestamps || null },
+      null,
+      2
+    )
+  );
+}
+
 // --- Scene generation --------------------------------------------------
 
-async function generateScene(line, sceneIndex, tmpDir) {
-  console.log(`Scene ${sceneIndex}: generating voice...`);
+async function generateSceneFresh(line, sceneIndex, tmpDir) {
+  console.log(`Scene ${sceneIndex}: generating voice (fal.ai — billed)...`);
   const audioResult = await fal.subscribe("fal-ai/elevenlabs/tts/turbo-v2.5", {
-    input: {
-      text: line,
-      speed: 0.85 // default is 1 (normal); slower reduces the "reading too fast" feel
-    }
+    input: { text: line, speed: VOICE_SPEED, timestamps: true }
   });
   const audioUrl = audioResult.data.audio.url;
   const audioPath = `${tmpDir}/scene${sceneIndex}_audio.mp3`;
   await downloadFile(audioUrl, audioPath);
 
+  const wordTimestamps = audioResult.data.timestamps || null;
   const audioDuration = ffprobeDuration(audioPath);
-  // Kling supports fixed durations; round up to the nearest supported value.
   const klingDuration = audioDuration <= 5 ? "5" : "10";
 
-  console.log(`Scene ${sceneIndex}: animating mascot (audio ${audioDuration.toFixed(1)}s, video ${klingDuration}s)...`);
+  console.log(`Scene ${sceneIndex}: animating mascot (fal.ai — billed; audio ${audioDuration.toFixed(1)}s, video ${klingDuration}s)...`);
   const videoResult = await fal.subscribe("fal-ai/kling-video/v2.6/pro/image-to-video", {
     input: {
       prompt:
@@ -154,28 +264,45 @@ async function generateScene(line, sceneIndex, tmpDir) {
   const videoPath = `${tmpDir}/scene${sceneIndex}_video.mp4`;
   await downloadFile(videoUrl, videoPath);
 
-  return { videoPath, audioPath, audioDuration, text: line };
+  return { videoPath, audioPath, audioDuration, text: line, wordTimestamps };
 }
 
-// Burn per-line captions onto a scene, replace its audio track with the
-// generated voice, trim video to match audio length exactly, and normalize
-// to 1080x1920 so scenes concat cleanly.
+async function getScene(line, sceneIndex, tmpDir) {
+  const key = sceneCacheKey(line);
+
+  if (!FORCE_REGEN) {
+    const cached = loadFromCache(key);
+    if (cached) {
+      console.log(`Scene ${sceneIndex}: using cached voice+video (no charge) — key ${key}`);
+      return cached;
+    }
+  }
+
+  const fresh = await generateSceneFresh(line, sceneIndex, tmpDir);
+  saveToCache(key, fresh);
+  return fresh;
+}
+
+// --- Assembly (always runs fresh — this is the free, iterable part) ----
+
 function renderScene(scene, sceneIndex, tmpDir) {
   const outPath = `${tmpDir}/scene${sceneIndex}_final.mp4`;
-  const chunks = splitIntoChunks(scene.text);
-  const chunkLen = scene.audioDuration / chunks.length;
+  const videoDuration = ffprobeDuration(scene.videoPath);
+  const captionFilters = buildCaptionFilters(scene);
 
-  const allFilters = chunks
-    .flatMap((chunk, i) =>
-      captionFilters(chunk, (i * chunkLen).toFixed(2), ((i + 1) * chunkLen).toFixed(2))
-    )
-    .join(",");
+  // If the voiceover runs longer than the Kling clip, freeze the last frame
+  // to cover the gap instead of letting the video end early (this is what
+  // was cutting off before the price line before).
+  const needsExtend = scene.audioDuration > videoDuration + 0.05;
+  const tpad = needsExtend
+    ? `,tpad=stop_mode=clone:stop_duration=${(scene.audioDuration - videoDuration).toFixed(2)}`
+    : "";
 
   const cmd = [
     "ffmpeg -y",
     `-i "${scene.videoPath}"`,
     `-i "${scene.audioPath}"`,
-    `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,${allFilters}"`,
+    `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920${tpad},${captionFilters}"`,
     "-map 0:v:0 -map 1:a:0",
     `-t ${scene.audioDuration.toFixed(2)}`,
     "-c:v libx264 -preset fast -crf 23 -c:a aac",
@@ -193,15 +320,16 @@ async function main() {
     throw new Error("FAL_KEY environment variable not set.");
   }
 
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
   const tmpDir = "/tmp/tiktok_frames";
   fs.mkdirSync(tmpDir, { recursive: true });
 
   const [line1, line2] = buildScript(posts);
 
-  const scene1 = await generateScene(line1, 1, tmpDir);
-  const scene2 = await generateScene(line2, 2, tmpDir);
+  const scene1 = await getScene(line1, 1, tmpDir);
+  const scene2 = await getScene(line2, 2, tmpDir);
 
-  console.log("Rendering scenes with captions...");
+  console.log("Rendering scenes with captions (free — local ffmpeg only)...");
   const final1 = renderScene(scene1, 1, tmpDir);
   const final2 = renderScene(scene2, 2, tmpDir);
 
@@ -209,9 +337,6 @@ async function main() {
   const concatFile = `${tmpDir}/concat.txt`;
   fs.writeFileSync(concatFile, `file '${final1}'\nfile '${final2}'\n`);
 
-  // Re-encode on concat (not -c copy) so mismatched internal timestamps
-  // between the two independently-encoded scenes don't cause audio
-  // skipping/repeating on playback.
   execSync(
     [
       "ffmpeg -y",
