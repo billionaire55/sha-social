@@ -5,6 +5,11 @@
 // Output: today_tiktok.mp4
 // Requires: assets/mascot.png committed to the repo (publicly reachable via raw.githubusercontent.com)
 // Requires env: FAL_KEY, GITHUB_REPOSITORY (already available in Actions)
+//
+// KNOWN LIMITATION: Kling's mouth animation is prompt-driven, not audio-driven.
+// It does not lip-sync to the generated voice track. This is an accepted
+// trade-off (gesture-forward animation) rather than a bug — true audio-driven
+// lip sync would require different, dedicated tooling.
 
 const fs = require("fs");
 const https = require("https");
@@ -46,6 +51,13 @@ function buildScript(posts) {
 
 // --- Caption helpers -------------------------------------------------
 
+const FRAME_W = 1080;
+const FRAME_H = 1920;
+const FONT_SIZE = 42;
+const LINE_HEIGHT = FONT_SIZE + 14;
+const MAX_CHARS_PER_LINE = 22; // conservative — guarantees fit at FONT_SIZE within FRAME_W
+const CAPTION_BOTTOM_MARGIN = 360; // px from bottom edge to the LAST line's baseline
+
 // Word-wrap plain text to a max character width per line.
 function wrapLines(text, maxChars) {
   const words = String(text).split(/\s+/).filter(Boolean);
@@ -68,7 +80,7 @@ function wrapLines(text, maxChars) {
 // changes partway through the clip instead of sitting frozen the whole time.
 function splitIntoChunks(text) {
   const words = String(text).split(/\s+/).filter(Boolean);
-  if (words.length <= 6) return [text];
+  if (words.length <= 5) return [text];
   const mid = Math.ceil(words.length / 2);
   return [words.slice(0, mid).join(" "), words.slice(mid).join(" ")];
 }
@@ -81,16 +93,25 @@ function escForDrawtext(s) {
     .replace(/%/g, "\\%");
 }
 
-// Build a drawtext filter for one caption chunk, wrapped to fit the 1080px
-// frame, shown only during [start, end] seconds of the scene.
-function captionFilter(text, start, end) {
-  const lines = wrapLines(text, 26).map(escForDrawtext);
-  const joined = lines.join("\n");
-  return (
-    `drawtext=text='${joined}':fontcolor=white:fontsize=46:box=1:boxcolor=black@0.55:` +
-    `boxborderw=18:x=(w-text_w)/2:y=h-360:line_spacing=10:` +
-    `enable='between(t,${start},${end})'`
-  );
+// Build ONE drawtext filter per wrapped line (never multi-line text in a
+// single drawtext call — ffmpeg's text_w/centering for multi-line strings
+// is unreliable across versions and was causing captions to run off-frame).
+// Each line gets its own explicit y position, stacked upward from a fixed
+// bottom margin, and is only visible during [start, end] seconds.
+function captionFilters(text, start, end) {
+  const lines = wrapLines(text, MAX_CHARS_PER_LINE);
+  const totalHeight = lines.length * LINE_HEIGHT;
+  const firstLineY = FRAME_H - CAPTION_BOTTOM_MARGIN - totalHeight;
+
+  return lines.map((line, i) => {
+    const safe = escForDrawtext(line);
+    const y = firstLineY + i * LINE_HEIGHT;
+    return (
+      `drawtext=text='${safe}':fontcolor=white:fontsize=${FONT_SIZE}:box=1:boxcolor=black@0.55:` +
+      `boxborderw=14:x=(w-text_w)/2:y=${y}:` +
+      `enable='between(t,${start},${end})'`
+    );
+  });
 }
 
 function ffprobeDuration(path) {
@@ -105,7 +126,10 @@ function ffprobeDuration(path) {
 async function generateScene(line, sceneIndex, tmpDir) {
   console.log(`Scene ${sceneIndex}: generating voice...`);
   const audioResult = await fal.subscribe("fal-ai/elevenlabs/tts/turbo-v2.5", {
-    input: { text: line }
+    input: {
+      text: line,
+      speed: 0.85 // default is 1 (normal); slower reduces the "reading too fast" feel
+    }
   });
   const audioUrl = audioResult.data.audio.url;
   const audioPath = `${tmpDir}/scene${sceneIndex}_audio.mp3`;
@@ -133,23 +157,25 @@ async function generateScene(line, sceneIndex, tmpDir) {
   return { videoPath, audioPath, audioDuration, text: line };
 }
 
-// Burn wrapped, sequential captions onto a scene, replace its audio track
-// with the generated voice, trim video to match audio length exactly,
-// and normalize to 1080x1920 so scenes concat cleanly.
+// Burn per-line captions onto a scene, replace its audio track with the
+// generated voice, trim video to match audio length exactly, and normalize
+// to 1080x1920 so scenes concat cleanly.
 function renderScene(scene, sceneIndex, tmpDir) {
   const outPath = `${tmpDir}/scene${sceneIndex}_final.mp4`;
   const chunks = splitIntoChunks(scene.text);
   const chunkLen = scene.audioDuration / chunks.length;
 
-  const drawtextFilters = chunks
-    .map((chunk, i) => captionFilter(chunk, (i * chunkLen).toFixed(2), ((i + 1) * chunkLen).toFixed(2)))
+  const allFilters = chunks
+    .flatMap((chunk, i) =>
+      captionFilters(chunk, (i * chunkLen).toFixed(2), ((i + 1) * chunkLen).toFixed(2))
+    )
     .join(",");
 
   const cmd = [
     "ffmpeg -y",
     `-i "${scene.videoPath}"`,
     `-i "${scene.audioPath}"`,
-    `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,${drawtextFilters}"`,
+    `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,${allFilters}"`,
     "-map 0:v:0 -map 1:a:0",
     `-t ${scene.audioDuration.toFixed(2)}`,
     "-c:v libx264 -preset fast -crf 23 -c:a aac",
@@ -175,7 +201,7 @@ async function main() {
   const scene1 = await generateScene(line1, 1, tmpDir);
   const scene2 = await generateScene(line2, 2, tmpDir);
 
-  console.log("Rendering scenes with wrapped captions...");
+  console.log("Rendering scenes with captions...");
   const final1 = renderScene(scene1, 1, tmpDir);
   const final2 = renderScene(scene2, 2, tmpDir);
 
