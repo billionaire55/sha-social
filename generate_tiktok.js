@@ -40,6 +40,23 @@ const CACHE_DIR = path.join(process.cwd(), ".cache", "tiktok");
 const FORCE_REGEN = process.env.FORCE_REGEN === "1";
 const VOICE_SPEED = 0.85; // valid range 0.7-1.2, default 1
 
+// Persistent brand watermark, burned into every frame — small and unobtrusive,
+// top-center, brand gold on dark ink outline so it reads on any background.
+const WATERMARK_FILTER =
+  "drawtext=text='SMARTERHUSTLEACADEMY.COM':fontcolor=0xD4A017:fontsize=30:" +
+  "borderw=2:bordercolor=0x16241D:x=(w-text_w)/2:y=64";
+
+// Extra silent hold (freeze frame + caption stay on screen, no narration)
+// added only to the final scene, so the CTA/price line has a beat to land
+// on instead of cutting the instant the voiceover stops.
+const FINAL_SCENE_HOLD_SECONDS = 1.2;
+
+// Optional background music bed. Fully optional — if this file isn't in the
+// repo, the video renders exactly as before (voice-only). To enable, add a
+// royalty-free/licensed MP3 at this path in the repo.
+const MUSIC_PATH = path.join(process.cwd(), "assets", "bgmusic.mp3");
+const MUSIC_VOLUME = 0.08; // low bed under narration, not competing with the voice
+
 function downloadFile(url, outPath) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(outPath);
@@ -57,6 +74,14 @@ function mascotImageUrl() {
 }
 
 function buildScript(posts) {
+  // Preferred path: use the actual 4-beat script Claude wrote for this offer
+  // (hook, education, offer, CTA) instead of a generic reused two-liner.
+  if (Array.isArray(posts.tiktok_scenes) && posts.tiktok_scenes.length > 0) {
+    return posts.tiktok_scenes.map(s => String(s).trim()).filter(Boolean);
+  }
+
+  // Fallback only — covers a today_posts.json generated before this field
+  // existed (e.g. a stale cache), so a bad run never crashes the pipeline.
   const meta = posts._meta;
   const price = meta.price === "$0" ? "free" : meta.price;
 
@@ -99,11 +124,19 @@ function wrapLines(text, maxChars) {
 }
 
 function escForDrawtext(s) {
+  // Order matters: backslash first (or later escapes get double-escaped),
+  // then the ffmpeg filtergraph metacharacters. A literal comma or semicolon
+  // in the caption text (very likely in normal sentences — "hook, education,
+  // offer" style copy, or numbers like "1,000") would otherwise terminate
+  // the drawtext filter early and corrupt the rest of the -vf chain, crashing
+  // a paid run. This was happening silently whenever a script line had a comma.
   return String(s)
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\u2019")
     .replace(/:/g, "\\:")
-    .replace(/%/g, "\\%");
+    .replace(/%/g, "\\%")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
 }
 
 function drawtextForLines(lines, start, end) {
@@ -285,26 +318,27 @@ async function getScene(line, sceneIndex, tmpDir) {
 
 // --- Assembly (always runs fresh — this is the free, iterable part) ----
 
-function renderScene(scene, sceneIndex, tmpDir) {
+function renderScene(scene, sceneIndex, tmpDir, extraHoldSeconds = 0) {
   const outPath = `${tmpDir}/scene${sceneIndex}_final.mp4`;
   const videoDuration = ffprobeDuration(scene.videoPath);
   const captionFilters = buildCaptionFilters(scene);
+  const targetDuration = scene.audioDuration + extraHoldSeconds;
 
-  // If the voiceover runs longer than the Kling clip, freeze the last frame
-  // to cover the gap instead of letting the video end early (this is what
-  // was cutting off before the price line before).
-  const needsExtend = scene.audioDuration > videoDuration + 0.05;
+  // If the voiceover (plus any extra hold on the final scene) runs longer
+  // than the Kling clip, freeze the last frame to cover the gap instead of
+  // letting the video end early.
+  const needsExtend = targetDuration > videoDuration + 0.05;
   const tpad = needsExtend
-    ? `,tpad=stop_mode=clone:stop_duration=${(scene.audioDuration - videoDuration).toFixed(2)}`
+    ? `,tpad=stop_mode=clone:stop_duration=${(targetDuration - videoDuration).toFixed(2)}`
     : "";
 
   const cmd = [
     "ffmpeg -y",
     `-i "${scene.videoPath}"`,
     `-i "${scene.audioPath}"`,
-    `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920${tpad},${captionFilters}"`,
+    `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920${tpad},${WATERMARK_FILTER},${captionFilters}"`,
     "-map 0:v:0 -map 1:a:0",
-    `-t ${scene.audioDuration.toFixed(2)}`,
+    `-t ${targetDuration.toFixed(2)}`,
     "-c:v libx264 -preset fast -crf 23 -c:a aac",
     `"${outPath}"`
   ].join(" ");
@@ -324,29 +358,55 @@ async function main() {
   const tmpDir = "/tmp/tiktok_frames";
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  const [line1, line2] = buildScript(posts);
+  const lines = buildScript(posts);
+  console.log(`Script: ${lines.length} scene(s) —`, lines);
 
-  const scene1 = await getScene(line1, 1, tmpDir);
-  const scene2 = await getScene(line2, 2, tmpDir);
+  const scenes = [];
+  for (let i = 0; i < lines.length; i++) {
+    scenes.push(await getScene(lines[i], i + 1, tmpDir));
+  }
 
-  console.log("Rendering scenes with captions (free — local ffmpeg only)...");
-  const final1 = renderScene(scene1, 1, tmpDir);
-  const final2 = renderScene(scene2, 2, tmpDir);
+  console.log("Rendering scenes with captions + watermark (free — local ffmpeg only)...");
+  const finals = scenes.map((scene, i) => {
+    const isLast = i === scenes.length - 1;
+    return renderScene(scene, i + 1, tmpDir, isLast ? FINAL_SCENE_HOLD_SECONDS : 0);
+  });
 
   console.log("Concatenating scenes (re-encoding for clean sync)...");
   const concatFile = `${tmpDir}/concat.txt`;
-  fs.writeFileSync(concatFile, `file '${final1}'\nfile '${final2}'\n`);
+  fs.writeFileSync(concatFile, finals.map(f => `file '${f}'`).join("\n") + "\n");
 
+  const concatOut = `${tmpDir}/concat_out.mp4`;
   execSync(
     [
       "ffmpeg -y",
       `-f concat -safe 0 -i "${concatFile}"`,
       "-c:v libx264 -preset fast -crf 23 -c:a aac",
       "-movflags +faststart",
-      "today_tiktok.mp4"
+      `"${concatOut}"`
     ].join(" "),
     { stdio: "inherit" }
   );
+
+  if (fs.existsSync(MUSIC_PATH)) {
+    console.log("Mixing background music bed under narration...");
+    execSync(
+      [
+        "ffmpeg -y",
+        `-i "${concatOut}"`,
+        `-stream_loop -1 -i "${MUSIC_PATH}"`,
+        `-filter_complex "[1:a]volume=${MUSIC_VOLUME}[music];[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]"`,
+        '-map 0:v -map "[aout]"',
+        "-c:v copy -c:a aac -shortest",
+        "-movflags +faststart",
+        "today_tiktok.mp4"
+      ].join(" "),
+      { stdio: "inherit" }
+    );
+  } else {
+    fs.copyFileSync(concatOut, "today_tiktok.mp4");
+    console.log("No assets/bgmusic.mp3 in the repo — skipping music bed (narration-only, as before).");
+  }
 
   console.log("Wrote today_tiktok.mp4");
 }
