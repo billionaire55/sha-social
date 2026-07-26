@@ -42,7 +42,7 @@ async function post(platform) {
     ...(platform.extra || {}),
     ...(platform.thread ? { thread: platform.thread } : {})
   };
-  if (imageUrl && platform.id !== "twitter") body.media = [imageUrl];
+  if (imageUrl) body.media = [imageUrl];
 
   const res = await fetch(BASE_URL, {
     method: "POST",
