@@ -1,7 +1,8 @@
 // generate-blog-promo-card.mjs
 // Receives blog post data via env vars, renders a 1080x1350 promo card PNG
-// and saves it as blog_promo_image.png for posting to social platforms.
-// Called by the blog-promo workflow after sha-blog publishes a new post.
+// WITH the SHA mascot and saves it as blog_promo_image.png for posting to
+// social platforms. Called by the blog-promo workflow after sha-blog
+// publishes a new post.
 
 import fs from "fs";
 import sharp from "sharp";
@@ -13,6 +14,8 @@ const GOLD       = "#D4A017";
 const GOLD_LIGHT = "#e8b82a";
 const CREAM      = "#FAFAF5";
 const GREY       = "#444444";
+
+const MASCOT_PATH = "assets/mascot.png";
 
 function esc(s) {
   return String(s)
@@ -43,27 +46,35 @@ function dotGrid(x, y, w, h, spacing, r, color, opacity) {
   return dots.join("");
 }
 
-function svg(title, excerpt) {
-  const W = 1080, H = 1350;
-  const HEADER_H = 480;
-  const FOOTER_H = 120;
-  const PAD = 64;
-  const BODY_TOP = HEADER_H + 48;
+const W = 1080, H = 1350;
+const HEADER_H = 420;
+const FOOTER_H = 120;
+const PAD = 64;
 
-  const hLines = wrap(title, 22);
-  const H_FONT = hLines.length > 3 ? 60 : hLines.length === 3 ? 68 : hLines.length === 2 ? 78 : 88;
-  const H_LH   = H_FONT + 14;
-  const H_START = 160 + (HEADER_H - 160 - hLines.length * H_LH) / 2 + H_LH;
+const PANEL_X = PAD;
+const PANEL_Y = HEADER_H + 40;
+const PANEL_W = 420;
+const PANEL_H = 520;
 
-  const eLines = wrap(excerpt, 42);
-  const E_FONT = 38;
-  const E_LH   = 56;
+const COL_X = PANEL_X + PANEL_W + 40;
+const COL_W = W - COL_X - PAD;
 
-  const LABEL_Y   = BODY_TOP + 40;
-  const DIVIDER_Y = LABEL_Y + 44;
-  const EXCERPT_Y = DIVIDER_Y + 52;
-  const URL_Y     = H - FOOTER_H - 100;
-  const URL_H     = 80;
+function baseCardSvg(title, excerpt) {
+  const hLines = wrap(title, 20);
+  const H_FONT = hLines.length > 3 ? 46 : hLines.length === 3 ? 52 : hLines.length === 2 ? 60 : 68;
+  const H_LH   = H_FONT + 12;
+  const H_START = 150 + (HEADER_H - 150 - hLines.length * H_LH) / 2 + H_LH;
+
+  const eLines = wrap(excerpt, 24);
+  const E_FONT = 30;
+  const E_LH   = 42;
+
+  const LABEL_Y   = PANEL_Y + 40;
+  const DIVIDER_Y = LABEL_Y + 24;
+  const EXCERPT_Y = DIVIDER_Y + 44;
+
+  const URL_Y = H - FOOTER_H - 100;
+  const URL_H = 80;
 
   const footerIcons = [
     { label: "GUIDES",     cx: 130 },
@@ -102,10 +113,10 @@ function svg(title, excerpt) {
   ${dotGrid(0, 0, W, HEADER_H, 28, 2.2, "#ffffff", 0.065)}
   <rect x="0" y="0" width="${W}" height="5" fill="url(#goldGrad)"/>
 
-  <text x="${W/2}" y="68" text-anchor="middle"
-    font-family="Arial,Helvetica,sans-serif" font-size="26" font-weight="700"
+  <text x="${W/2}" y="56" text-anchor="middle"
+    font-family="Arial,Helvetica,sans-serif" font-size="24" font-weight="700"
     fill="${CREAM}" letter-spacing="5" opacity="0.92">SMARTER HUSTLE ACADEMY™</text>
-  <rect x="${W/2-160}" y="82" width="320" height="2"
+  <rect x="${W/2-150}" y="70" width="300" height="2"
     fill="url(#goldGrad)" opacity="0.75"/>
 
   <text x="${W/2}" y="${H_START}" text-anchor="middle"
@@ -117,16 +128,16 @@ function svg(title, excerpt) {
   <path d="M0,${HEADER_H} Q${W/2},${HEADER_H+44} ${W},${HEADER_H}"
     fill="none" stroke="url(#goldGrad)" stroke-width="3"/>
 
-  <text x="${PAD}" y="${LABEL_Y}"
-    font-family="Arial,Helvetica,sans-serif" font-size="28" font-weight="700"
+  <text x="${COL_X}" y="${LABEL_Y}"
+    font-family="Arial,Helvetica,sans-serif" font-size="24" font-weight="700"
     fill="${GOLD}" letter-spacing="3">NEW ON THE BLOG</text>
-  <rect x="${PAD}" y="${DIVIDER_Y}" width="${W - PAD*2}" height="2.5"
+  <rect x="${COL_X}" y="${DIVIDER_Y}" width="${COL_W}" height="2.5"
     fill="url(#goldGrad)" opacity="0.85"/>
 
-  <text x="${PAD}" y="${EXCERPT_Y}"
+  <text x="${COL_X}" y="${EXCERPT_Y}"
     font-family="Arial,Helvetica,sans-serif" font-size="${E_FONT}" font-weight="400"
     fill="${GREY}">
-    ${eLines.slice(0,4).map((l,i)=>`<tspan x="${PAD}" dy="${i===0?0:E_LH}">${esc(l)}</tspan>`).join("")}
+    ${eLines.slice(0,7).map((l,i)=>`<tspan x="${COL_X}" dy="${i===0?0:E_LH}">${esc(l)}</tspan>`).join("")}
   </text>
 
   <rect x="${PAD}" y="${URL_Y}" width="${W - PAD*2}" height="${URL_H}"
@@ -144,9 +155,46 @@ function svg(title, excerpt) {
 </svg>`;
 }
 
+function panelMaskSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PANEL_W}" height="${PANEL_H}">
+    <rect x="0" y="0" width="${PANEL_W}" height="${PANEL_H}" rx="20" fill="#fff"/>
+  </svg>`;
+}
+
+function panelBorderSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PANEL_W}" height="${PANEL_H}">
+    <rect x="2" y="2" width="${PANEL_W-4}" height="${PANEL_H-4}" rx="18"
+      fill="none" stroke="${GOLD}" stroke-width="5"/>
+  </svg>`;
+}
+
 const title   = process.env.BLOG_TITLE   || "New Post";
 const excerpt = process.env.BLOG_EXCERPT || "Read the latest on the SHA blog.";
 
-const svgBuf = Buffer.from(svg(title, excerpt));
-await sharp(svgBuf).png().toFile("blog_promo_image.png");
-console.log("Wrote blog_promo_image.png");
+if (!fs.existsSync(MASCOT_PATH)) {
+  throw new Error(`${MASCOT_PATH} not found — the mascot image must be committed to the repo.`);
+}
+
+const cardBuf = await sharp(Buffer.from(baseCardSvg(title, excerpt))).png().toBuffer();
+
+const mascotCropped = await sharp(MASCOT_PATH)
+  .resize(PANEL_W, PANEL_H, { fit: "cover", position: "top" })
+  .toBuffer();
+
+const maskBuf = await sharp(Buffer.from(panelMaskSvg())).png().toBuffer();
+const borderBuf = await sharp(Buffer.from(panelBorderSvg())).png().toBuffer();
+
+const maskedMascot = await sharp(mascotCropped)
+  .composite([{ input: maskBuf, blend: "dest-in" }])
+  .png()
+  .toBuffer();
+
+await sharp(cardBuf)
+  .composite([
+    { input: maskedMascot, top: PANEL_Y, left: PANEL_X },
+    { input: borderBuf, top: PANEL_Y, left: PANEL_X }
+  ])
+  .png()
+  .toFile("blog_promo_image.png");
+
+console.log("Wrote blog_promo_image.png — branded card with mascot panel");
