@@ -1,6 +1,6 @@
 // generate_image.js
-// Renders a premium branded 1080x1350 offer card -> today_image.png
-// Uses SVG rendered via sharp — no extra dependencies.
+// Renders a premium branded 1080x1350 offer card WITH the SHA mascot -> today_image.png
+// Uses SVG rendered via sharp, mascot composited in as a framed panel.
 
 const fs = require("fs");
 const sharp = require("sharp");
@@ -12,6 +12,8 @@ const GOLD       = "#D4A017";
 const GOLD_LIGHT = "#e8b82a";
 const CREAM      = "#FAFAF5";
 const GREY       = "#444444";
+
+const MASCOT_PATH = "assets/mascot.png";
 
 function esc(s) {
   return String(s)
@@ -42,35 +44,43 @@ function dotGrid(x, y, w, h, spacing, r, color, opacity) {
   return dots.join("");
 }
 
-function svg(p) {
+// --- Layout constants shared between the base card and the mascot panel ---
+const W = 1080, H = 1350;
+const HEADER_H = 460;
+const FOOTER_H = 120;
+const PAD = 64;
+
+const PANEL_X = PAD;
+const PANEL_Y = HEADER_H + 40;
+const PANEL_W = 420;
+const PANEL_H = 560;
+
+const COL_X = PANEL_X + PANEL_W + 40;
+const COL_W = W - COL_X - PAD;
+
+function baseCardSvg(p) {
   const headline = p.graphic_headline || p._meta.product;
   const subline  = p.graphic_subline  || "";
   const price    = p._meta.price === "$0" ? "FREE" : p._meta.price;
   const url      = "smarterhustleacademy.com";
 
-  const W = 1080, H = 1350;
-  const HEADER_H = 560;
-  const FOOTER_H = 120;
-  const PAD = 64;
-  const BODY_TOP = HEADER_H + 48;
+  const hLines = wrap(headline, 22);
+  const H_FONT = hLines.length > 2 ? 54 : hLines.length === 2 ? 62 : 72;
+  const H_LH   = H_FONT + 12;
+  const H_START = 170 + (HEADER_H - 170 - hLines.length * H_LH) / 2 + H_LH;
 
-  const hLines = wrap(headline, 20);
-  const H_FONT = hLines.length > 2 ? 68 : hLines.length === 2 ? 80 : 92;
-  const H_LH   = H_FONT + 14;
-  const H_START = 180 + (HEADER_H - 180 - hLines.length * H_LH) / 2 + H_LH;
+  const sLines = wrap(subline, 18);
+  const S_FONT = 34;
+  const S_LH   = 46;
 
-  const sLines = wrap(subline, 38);
-  const S_FONT = 40;
-  const S_LH   = 58;
+  const SUBLINE_Y = PANEL_Y + 50;
+  const PRICE_Y   = SUBLINE_Y + (sLines.length * S_LH) + 36;
+  const PRICE_H   = 90;
+  const PRICE_W   = Math.min(COL_W, price === "FREE" ? 240 : 200);
 
-  const DIVIDER_Y  = BODY_TOP;
-  const SUBLINE_Y  = DIVIDER_Y + 40;
-  const PRICE_Y    = SUBLINE_Y + (sLines.length * S_LH) + 40;
-  const PRICE_H    = 100;
-  const PRICE_W    = price === "FREE" ? 260 : 220;
-  const DESC_Y     = PRICE_Y + PRICE_H + 44;
-  const URL_Y      = DESC_Y + 80;
-  const URL_H      = 80;
+  const DESC_Y = PANEL_Y + PANEL_H + 40;
+  const URL_Y  = DESC_Y + 46;
+  const URL_H  = 64;
 
   const footerIcons = [
     { label: "GUIDES",     cx: 130 },
@@ -86,7 +96,7 @@ function svg(p) {
       fill="${GOLD}" letter-spacing="1">${esc(ic.label)}</text>
   `).join("");
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <defs>
     <linearGradient id="hdrGrad" x1="0" y1="0" x2="0.2" y2="1">
       <stop offset="0%" stop-color="${GREEN_DARK}"/>
@@ -112,10 +122,10 @@ function svg(p) {
   ${dotGrid(0, 0, W, HEADER_H, 28, 2.2, "#ffffff", 0.065)}
   <rect x="0" y="0" width="${W}" height="5" fill="url(#goldGrad)"/>
 
-  <text x="${W/2}" y="68" text-anchor="middle"
-    font-family="Arial,Helvetica,sans-serif" font-size="26" font-weight="700"
+  <text x="${W/2}" y="60" text-anchor="middle"
+    font-family="Arial,Helvetica,sans-serif" font-size="24" font-weight="700"
     fill="${CREAM}" letter-spacing="5" opacity="0.92">SMARTER HUSTLE ACADEMY™</text>
-  <rect x="${W/2 - 160}" y="82" width="320" height="2"
+  <rect x="${W/2 - 150}" y="74" width="300" height="2"
     fill="url(#goldGrad)" opacity="0.75"/>
 
   <text x="${W/2}" y="${H_START}" text-anchor="middle"
@@ -126,27 +136,24 @@ function svg(p) {
 
   <path d="M0,${HEADER_H} Q${W/2},${HEADER_H+44} ${W},${HEADER_H}"
     fill="none" stroke="url(#goldGrad)" stroke-width="3"/>
-  <rect x="${PAD}" y="${DIVIDER_Y}" width="${W - PAD*2}" height="2.5"
-    fill="url(#goldGrad)" opacity="0.85"/>
 
-  ${subline ? `<text x="${W/2}" y="${SUBLINE_Y + S_FONT}"
-    text-anchor="middle"
+  ${subline ? `<text x="${COL_X}" y="${SUBLINE_Y + S_FONT}"
     font-family="Arial,Helvetica,sans-serif" font-size="${S_FONT}" font-weight="600"
     fill="${GREEN_DARK}">
-    ${sLines.map((l,i)=>`<tspan x="${W/2}" dy="${i===0?0:S_LH}">${esc(l)}</tspan>`).join("")}
+    ${sLines.map((l,i)=>`<tspan x="${COL_X}" dy="${i===0?0:S_LH}">${esc(l)}</tspan>`).join("")}
   </text>` : ""}
 
-  <rect x="${PAD}" y="${PRICE_Y}" width="${PRICE_W}" height="${PRICE_H}"
+  <rect x="${COL_X}" y="${PRICE_Y}" width="${PRICE_W}" height="${PRICE_H}"
     rx="12" fill="${GREEN}" filter="url(#shadow)"/>
-  <rect x="${PAD+3}" y="${PRICE_Y+3}" width="${PRICE_W-6}" height="${PRICE_H-6}"
+  <rect x="${COL_X+3}" y="${PRICE_Y+3}" width="${PRICE_W-6}" height="${PRICE_H-6}"
     rx="10" fill="none" stroke="${GOLD}" stroke-width="2.5"/>
-  <text x="${PAD + PRICE_W/2}" y="${PRICE_Y + 68}"
+  <text x="${COL_X + PRICE_W/2}" y="${PRICE_Y + 60}"
     text-anchor="middle"
-    font-family="Arial,Helvetica,sans-serif" font-size="54" font-weight="900"
+    font-family="Arial,Helvetica,sans-serif" font-size="46" font-weight="900"
     fill="${GOLD}" filter="url(#goldGlow)">${esc(price)}</text>
 
   <text x="${PAD}" y="${DESC_Y}"
-    font-family="Arial,Helvetica,sans-serif" font-size="36" font-weight="400"
+    font-family="Arial,Helvetica,sans-serif" font-size="32" font-weight="400"
     fill="${GREY}">One-time. Yours forever. No subscription.</text>
 
   <rect x="${PAD}" y="${URL_Y}" width="${W - PAD*2}" height="${URL_H}"
@@ -161,14 +168,56 @@ function svg(p) {
   <rect x="0" y="${H - FOOTER_H}" width="${W}" height="${FOOTER_H}" fill="${GREEN_DARK}"/>
   <rect x="0" y="${H - FOOTER_H}" width="${W}" height="3" fill="url(#goldGrad)"/>
   ${footerIcons}
-</svg>`;
+</svg>`, urlBottom: URL_Y + URL_H };
+}
+
+// Rounded-rect alpha mask + gold border frame for the mascot panel, rendered
+// at exactly the panel's size so it composites in one step.
+function panelMaskSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PANEL_W}" height="${PANEL_H}">
+    <rect x="0" y="0" width="${PANEL_W}" height="${PANEL_H}" rx="20" fill="#fff"/>
+  </svg>`;
+}
+
+function panelBorderSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PANEL_W}" height="${PANEL_H}">
+    <rect x="2" y="2" width="${PANEL_W-4}" height="${PANEL_H-4}" rx="18"
+      fill="none" stroke="${GOLD}" stroke-width="5"/>
+  </svg>`;
 }
 
 async function main() {
   const p = JSON.parse(fs.readFileSync("today_posts.json", "utf8"));
-  const svgBuf = Buffer.from(svg(p));
-  await sharp(svgBuf).png().toFile("today_image.png");
-  console.log("Wrote today_image.png — premium branded card");
+
+  if (!fs.existsSync(MASCOT_PATH)) {
+    throw new Error(`${MASCOT_PATH} not found — the mascot image must be committed to the repo.`);
+  }
+
+  const { svg: cardSvg } = baseCardSvg(p);
+  const cardBuf = await sharp(Buffer.from(cardSvg)).png().toBuffer();
+
+  // Crop/resize the mascot to exactly fill the panel, then mask to rounded corners.
+  const mascotCropped = await sharp(MASCOT_PATH)
+    .resize(PANEL_W, PANEL_H, { fit: "cover", position: "top" })
+    .toBuffer();
+
+  const maskBuf = await sharp(Buffer.from(panelMaskSvg())).png().toBuffer();
+  const borderBuf = await sharp(Buffer.from(panelBorderSvg())).png().toBuffer();
+
+  const maskedMascot = await sharp(mascotCropped)
+    .composite([{ input: maskBuf, blend: "dest-in" }])
+    .png()
+    .toBuffer();
+
+  await sharp(cardBuf)
+    .composite([
+      { input: maskedMascot, top: PANEL_Y, left: PANEL_X },
+      { input: borderBuf, top: PANEL_Y, left: PANEL_X }
+    ])
+    .png()
+    .toFile("today_image.png");
+
+  console.log("Wrote today_image.png — branded card with mascot panel");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
