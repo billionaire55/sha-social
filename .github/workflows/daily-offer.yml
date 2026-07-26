@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install sharp @fal-ai/client
+          npm install sharp @fal-ai/client @higgsfield/client
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
@@ -43,9 +43,19 @@ jobs:
           restore-keys: |
             tiktok-cache-
 
+      - name: Restore Higgsfield scene cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/tiktok_hf
+          key: tiktok-hf-cache-${{ hashFiles('today_posts.json') }}
+          restore-keys: |
+            tiktok-hf-cache-
+
       - name: Render mascot video (TikTok/YouTube)
         env:
           FAL_KEY: ${{ secrets.FAL_KEY }}
+          HIGGSFIELD_KEY_ID: ${{ secrets.HIGGSFIELD_KEY_ID }}
+          HIGGSFIELD_KEY_SECRET: ${{ secrets.HIGGSFIELD_KEY_SECRET }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           if node -e "
@@ -53,7 +63,10 @@ jobs:
             const platforms=(p._meta&&p._meta.platforms)||[];
             process.exit((platforms.includes('tiktok')||platforms.includes('youtube'))?0:1);
           "; then
-            node generate_tiktok.js || echo "::warning::Video generation failed — continuing without video today, other platforms still post."
+            node generate_video_higgsfield.js || {
+              echo "::warning::Higgsfield video generation failed — falling back to the fal.ai mascot pipeline for today.";
+              node generate_tiktok.js || echo "::warning::Both video pipelines failed — continuing without video today, other platforms still post.";
+            }
           else
             echo "No video platform scheduled today — skipping."
           fi
