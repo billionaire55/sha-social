@@ -27,10 +27,16 @@ OUTPUT: Respond with ONLY a valid JSON object, no markdown fences, no commentary
   "instagram": "hook line + 3-5 punchy lines + CTA (link in bio) + 8-12 hashtags",
   "pinterest_title": "under 100 chars, keyword-rich",
   "pinterest_description": "under 400 chars, evergreen searchable terms, CTA",
-  "tiktok_script": "60-90 sec faceless script: hook, 3 beats, CTA. (Manual/video use.)",
+  "tiktok_scenes": [
+    "hook line, 8-12 words, stop-the-scroll, ties to today's economic angle — must be speakable in under 5 seconds",
+    "one real educational tip tied to the product's topic, 10-14 words, under 5 seconds spoken",
+    "offer beat: what's included plus why it's low-risk, mention the price naturally, 10-14 words, under 5 seconds spoken",
+    "CTA, 8-10 words, urgency plus 'link in bio', under 5 seconds spoken"
+  ],
   "graphic_headline": "punchy hook for the post image, under 40 chars, title case, do NOT include the price",
   "graphic_subline": "supporting line for the image, under 60 chars"
 }
+tiktok_scenes drives an automated voiced video (fal.ai + ElevenLabs + ffmpeg) — every line is spoken aloud by a TTS voice, so keep each one natural to say out loud: no markdown, no hashtags, no emoji, no abbreviations that don't sound right read aloud. Always exactly 4 array entries, in this order: hook, education, offer, CTA.
 Escape characters correctly for JSON.
 `.trim();
 
@@ -40,14 +46,7 @@ function todayOffer() {
   return offers[dow];
 }
 
-async function main() {
-  const offer = todayOffer();
-  const userMsg =
-    `Date: ${new Date().toISOString().slice(0, 10)}\n` +
-    `Product: ${offer.product}\nPrice: ${offer.price}\nProduct URL: ${offer.url}\n` +
-    `Offer hook for today: ${offer.hook}\n` +
-    `Priority platforms: ${offer.platforms.join(", ")}`;
-
+async function callClaude(userMsg) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -65,10 +64,53 @@ async function main() {
 
   if (!res.ok) throw new Error(`Claude API ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  let text = data.content.filter(b => b.type === "text").map(b => b.text).join("").trim();
-  text = text.replace(/^```json\s*/i, "").replace(/```$/g, "").trim();
+  return data.content.filter(b => b.type === "text").map(b => b.text).join("").trim();
+}
 
-  const posts = JSON.parse(text);
+// Best case: the response is clean JSON (optionally fenced). If Claude adds
+// any stray preamble/explanation despite the instruction not to, fall back
+// to pulling out the first balanced {...} block instead of failing the
+// entire day's run over a formatting slip.
+function parsePostsJson(rawText) {
+  let text = rawText.replace(/^```json\s*/i, "").replace(/```$/g, "").trim();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const start = text.indexOf("{");
+    if (start === -1) throw e;
+    let depth = 0;
+    for (let i = start; i < text.length; i++) {
+      if (text[i] === "{") depth++;
+      else if (text[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          return JSON.parse(text.slice(start, i + 1));
+        }
+      }
+    }
+    throw e; // no balanced closing brace found — genuinely malformed, give up
+  }
+}
+
+async function main() {
+  const offer = todayOffer();
+  const userMsg =
+    `Date: ${new Date().toISOString().slice(0, 10)}\n` +
+    `Product: ${offer.product}\nPrice: ${offer.price}\nProduct URL: ${offer.url}\n` +
+    `Offer hook for today: ${offer.hook}\n` +
+    `Priority platforms: ${offer.platforms.join(", ")}`;
+
+  let posts;
+  try {
+    posts = parsePostsJson(await callClaude(userMsg));
+  } catch (firstError) {
+    // One retry — covers a transient 5xx/network blip or a one-off bad
+    // parse, without silently masking a genuinely broken prompt (if the
+    // retry also fails, this still throws and the run still fails loudly).
+    console.warn(`First attempt failed (${firstError.message}) — retrying once...`);
+    posts = parsePostsJson(await callClaude(userMsg));
+  }
+
   posts._meta = { product: offer.product, price: offer.price, url: offer.url, platforms: offer.platforms };
   fs.writeFileSync("today_posts.json", JSON.stringify(posts, null, 2));
   console.log("Generated posts for:", offer.product);
