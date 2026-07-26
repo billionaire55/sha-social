@@ -14,8 +14,9 @@ const PLATFORM_ID = {
   youtube:   "youtube"
 };
 
-const IMAGE_REQUIRED = new Set(["instagram", "pinterest"]);
-const IMAGE_OPTIONAL = new Set(["facebook", "x"]);
+// Every platform gets the branded mascot image except the ones getting video
+// instead — per her request, no post should go out as words-only.
+const IMAGE_PLATFORMS = new Set(["facebook", "linkedin", "x", "instagram", "pinterest"]);
 const VIDEO_REQUIRED = new Set(["tiktok", "youtube"]);
 
 // YouTube requires an explicit title (separate from the post body/description).
@@ -62,7 +63,7 @@ async function postOne(platform, text, p) {
   const img  = imageUrl();
   const vid  = videoUrl();
 
-  const needsImg = IMAGE_REQUIRED.has(platform);
+  const needsImg = IMAGE_PLATFORMS.has(platform);
   const needsVid = VIDEO_REQUIRED.has(platform);
 
   if (needsImg && !img) { console.log(`SKIP ${platform}: image required`); return; }
@@ -72,7 +73,7 @@ async function postOne(platform, text, p) {
 
   if (needsVid) {
     body.media = [vid];
-  } else if (img && (needsImg || IMAGE_OPTIONAL.has(platform))) {
+  } else if (needsImg && img) {
     body.media = [img];
   }
 
