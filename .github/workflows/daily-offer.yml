@@ -11,6 +11,7 @@ permissions:
 jobs:
   post:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -23,6 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm install sharp @fal-ai/client
+          sudo apt-get update
           sudo apt-get install -y ffmpeg
 
       - name: Generate today's posts with Claude (Agent 1)
@@ -33,7 +35,15 @@ jobs:
       - name: Render the branded offer image
         run: node generate_image.js
 
-      - name: Render TikTok mascot video
+      - name: Restore fal.ai scene cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/tiktok
+          key: tiktok-cache-${{ hashFiles('today_posts.json') }}
+          restore-keys: |
+            tiktok-cache-
+
+      - name: Render mascot video (TikTok/YouTube)
         env:
           FAL_KEY: ${{ secrets.FAL_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -41,11 +51,11 @@ jobs:
           if node -e "
             const p=require('./today_posts.json');
             const platforms=(p._meta&&p._meta.platforms)||[];
-            process.exit(platforms.includes('tiktok')?0:1);
+            process.exit((platforms.includes('tiktok')||platforms.includes('youtube'))?0:1);
           "; then
-            node generate_tiktok.js
+            node generate_tiktok.js || echo "::warning::Video generation failed — continuing without video today, other platforms still post."
           else
-            echo "TikTok not scheduled today — skipping."
+            echo "No video platform scheduled today — skipping."
           fi
 
       - name: Commit image + posts so the image URL is public BEFORE posting
