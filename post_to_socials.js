@@ -10,22 +10,35 @@ const PLATFORM_ID = {
   x:         "twitter",
   instagram: "instagram",
   pinterest: "pinterest",
-  tiktok:    "tiktok"
+  tiktok:    "tiktok",
+  youtube:   "youtube"
 };
 
 const IMAGE_REQUIRED = new Set(["instagram", "pinterest"]);
 const IMAGE_OPTIONAL = new Set(["facebook", "x"]);
-const VIDEO_REQUIRED = new Set(["tiktok"]);
+const VIDEO_REQUIRED = new Set(["tiktok", "youtube"]);
+
+// YouTube requires an explicit title (separate from the post body/description).
+function youtubeTitle(p) {
+  const headline = p.graphic_headline || p._meta.product;
+  const title = `${headline} — Smarter Hustle Academy`;
+  return title.length > 95 ? `${title.slice(0, 92)}...` : title;
+}
 
 function imageUrl() {
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) return null;
+  // Only point platforms at this file if it actually exists locally — otherwise
+  // a skipped/failed render step would still hand PostProxy a 404 URL instead
+  // of cleanly skipping the platforms that need it.
+  if (!fs.existsSync("today_image.png")) return null;
   return `https://raw.githubusercontent.com/${repo}/main/today_image.png`;
 }
 
 function videoUrl() {
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) return null;
+  if (!fs.existsSync("today_tiktok.mp4")) return null;
   return `https://raw.githubusercontent.com/${repo}/main/today_tiktok.mp4`;
 }
 
@@ -37,6 +50,7 @@ function contentFor(platform, p) {
     case "instagram": return p.instagram;
     case "pinterest": return `${p.pinterest_title}\n\n${p.pinterest_description}`;
     case "tiktok":    return p.instagram || p.facebook;
+    case "youtube":   return p.instagram || p.facebook;
     default:          return null;
   }
 }
@@ -82,6 +96,15 @@ async function postOne(platform, text, p) {
     };
   }
 
+  if (platform === "youtube") {
+    body.platforms = {
+      youtube: {
+        title: youtubeTitle(p),
+        privacy_status: "public"
+      }
+    };
+  }
+
   const res = await fetch(BASE_URL, {
     method: "POST",
     headers: {
@@ -103,10 +126,26 @@ async function main() {
   const p = JSON.parse(fs.readFileSync("today_posts.json", "utf8"));
   const platforms = (p._meta && p._meta.platforms) || [];
 
+  let failures = 0;
+
   for (const platform of platforms) {
     const text = contentFor(platform, p);
     if (!text) { console.log(`SKIP ${platform}: no content`); continue; }
-    await postOne(platform, text, p);
+    // Each platform is isolated — a thrown error (network failure, PostProxy
+    // outage) on one platform must not stop the remaining platforms from
+    // posting. Previously an uncaught exception here killed the whole loop
+    // and everything after the failing platform silently never posted.
+    try {
+      await postOne(platform, text, p);
+    } catch (e) {
+      failures++;
+      console.error(`FAIL ${platform}: ${e.message || e}`);
+    }
+  }
+
+  if (failures > 0) {
+    console.error(`${failures} platform(s) failed to post — see FAIL lines above.`);
+    process.exitCode = 1; // visible as a failed run in Actions, but every platform was still attempted
   }
 }
 
