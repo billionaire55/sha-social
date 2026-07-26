@@ -1,5 +1,5 @@
 {
-  "_comment": "facebook + x daily. linkedin 3x/week. instagram + pinterest 3x/week staggered. tiktok Mon/Wed/Fri.",
+  "_comment": "facebook + x daily. linkedin 3x/week. instagram + pinterest 3x/week staggered. tiktok + youtube Mon/Wed/Fri (same rendered video posts to both).",
   "0": {
     "product": "The Passive Income Blueprint",
     "price": "$27",
@@ -12,7 +12,7 @@
     "price": "$17",
     "url": "https://smarterhustleacademy.com/start",
     "hook": "Monday Money Move: you don't need a course, you need a hook that works tonight.",
-    "platforms": ["facebook", "x", "linkedin", "tiktok"]
+    "platforms": ["facebook", "x", "linkedin", "tiktok", "youtube"]
   },
   "2": {
     "product": "The Complete Digital Hustle Stack Guide",
@@ -26,7 +26,7 @@
     "price": "$27",
     "url": "https://smarterhustleacademy.com/start",
     "hook": "System Wednesday: two days, one weekend, a real system.",
-    "platforms": ["facebook", "x", "linkedin", "tiktok"]
+    "platforms": ["facebook", "x", "linkedin", "tiktok", "youtube"]
   },
   "4": {
     "product": "Fast Start Bundle",
@@ -40,7 +40,7 @@
     "price": "$0",
     "url": "https://smarterhustleacademy.com/start",
     "hook": "Free Win Friday: 38 steps, 8 pages, $0.",
-    "platforms": ["facebook", "x", "linkedin", "instagram", "tiktok"]
+    "platforms": ["facebook", "x", "linkedin", "instagram", "tiktok", "youtube"]
   },
   "6": {
     "product": "30-Day Elite Trading Academy (Founding Cohort)",
