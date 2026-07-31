@@ -3,31 +3,29 @@
 // ElevenLabs for voice), then assembles it with ffmpeg (captions + audio + concat).
 //
 // Output: today_tiktok.mp4
-// Requires: assets/mascot.png committed to the repo (publicly reachable via raw.githubusercontent.com)
-// Requires env: FAL_KEY, GITHUB_REPOSITORY (already available in Actions)
+// Requires: assets/mascot.png committed to the repo.
+// Requires env: FAL_KEY, GITHUB_REPOSITORY
 //
-// CACHING: generated voice + video for each scene are cached in .cache/tiktok/
-// keyed by the exact narration text (+voice speed). Re-running with the SAME
-// script text reuses the cached fal.ai output instead of paying again — so you
-// can iterate on captions/timing/ffmpeg logic for free. Set FORCE_REGEN=1 to
-// force fresh generation.
+// CACHING: generated voice + video for each scene are cached in .cache/tiktok/.
+// Re-running with the SAME script text reuses cached fal.ai output — free.
+// Set FORCE_REGEN=1 to force fresh (billed) generation.
 //
-// CAPTIONS: requests per-word timestamps from ElevenLabs (timestamps: true)
-// and uses them to time captions to what's actually being said. fal's exact
-// response shape for this field isn't fully documented publicly, so this is
-// wrapped defensively — if the timestamp data doesn't parse as expected, it
-// automatically falls back to a proportional (word-count-weighted) split
-// instead of crashing a paid run.
+// CAPTIONS (debugging note): fal's exact response shape for ElevenLabs
+// word-level timestamps isn't fully documented, and the last run using it
+// produced captions that matched the words but did not visibly change over
+// time — meaning the parsed time windows were likely wrong in a way that
+// still happened to show correct text. To isolate the problem, this version
+// TEMPORARILY IGNORES fal's timestamp data and always uses a self-computed
+// proportional split (a set of small time windows we fully control), and
+// logs each window to the console. This lets us confirm whether captions
+// change at all once the timing math is fully known/controlled by this
+// script — using the already-cached (free) scene assets, no new charges.
 //
-// DURATION: Kling only supports 5s or 10s clips (confirmed via fal docs) —
-// there is no native 15s option. If the generated audio runs longer than the
-// Kling clip, the last frame is frozen (ffmpeg tpad) to cover the remainder
-// so the video never cuts off before the voiceover finishes (e.g. the price
-// mention at the end of scene 2).
+// DURATION: Kling only supports 5s or 10s clips. If audio runs longer than
+// the clip, the last frame is frozen (ffmpeg tpad) to cover the remainder.
 //
-// KNOWN LIMITATION: Kling's mouth animation is prompt-driven, not audio-driven.
-// It does not lip-sync to the generated voice track — an accepted trade-off,
-// not a bug in this script.
+// KNOWN LIMITATION: Kling's mouth animation is prompt-driven, not
+// audio-driven — an accepted trade-off, not a bug.
 
 const fs = require("fs");
 const path = require("path");
@@ -38,24 +36,8 @@ const { fal } = require("@fal-ai/client");
 
 const CACHE_DIR = path.join(process.cwd(), ".cache", "tiktok");
 const FORCE_REGEN = process.env.FORCE_REGEN === "1";
-const VOICE_SPEED = 0.85; // valid range 0.7-1.2, default 1
-
-// Persistent brand watermark, burned into every frame — small and unobtrusive,
-// top-center, brand gold on dark ink outline so it reads on any background.
-const WATERMARK_FILTER =
-  "drawtext=text='SMARTERHUSTLEACADEMY.COM':fontcolor=0xD4A017:fontsize=30:" +
-  "borderw=2:bordercolor=0x16241D:x=(w-text_w)/2:y=64";
-
-// Extra silent hold (freeze frame + caption stay on screen, no narration)
-// added only to the final scene, so the CTA/price line has a beat to land
-// on instead of cutting the instant the voiceover stops.
-const FINAL_SCENE_HOLD_SECONDS = 1.2;
-
-// Optional background music bed. Fully optional — if this file isn't in the
-// repo, the video renders exactly as before (voice-only). To enable, add a
-// royalty-free/licensed MP3 at this path in the repo.
-const MUSIC_PATH = path.join(process.cwd(), "assets", "bgmusic.mp3");
-const MUSIC_VOLUME = 0.08; // low bed under narration, not competing with the voice
+const VOICE_SPEED = 0.85;
+const USE_FAL_TIMESTAMPS = false; // temporarily disabled — see note above
 
 function downloadFile(url, outPath) {
   return new Promise((resolve, reject) => {
@@ -74,14 +56,6 @@ function mascotImageUrl() {
 }
 
 function buildScript(posts) {
-  // Preferred path: use the actual 4-beat script Claude wrote for this offer
-  // (hook, education, offer, CTA) instead of a generic reused two-liner.
-  if (Array.isArray(posts.tiktok_scenes) && posts.tiktok_scenes.length > 0) {
-    return posts.tiktok_scenes.map(s => String(s).trim()).filter(Boolean);
-  }
-
-  // Fallback only — covers a today_posts.json generated before this field
-  // existed (e.g. a stale cache), so a bad run never crashes the pipeline.
   const meta = posts._meta;
   const price = meta.price === "$0" ? "free" : meta.price;
 
@@ -104,7 +78,7 @@ const FONT_SIZE = 42;
 const LINE_HEIGHT = FONT_SIZE + 14;
 const MAX_CHARS_PER_LINE = 22;
 const CAPTION_BOTTOM_MARGIN = 360;
-const WORDS_PER_CAPTION = 3; // smaller chunks = more visible movement/sync
+const WORDS_PER_CAPTION = 3;
 
 function wrapLines(text, maxChars) {
   const words = String(text).split(/\s+/).filter(Boolean);
@@ -124,19 +98,11 @@ function wrapLines(text, maxChars) {
 }
 
 function escForDrawtext(s) {
-  // Order matters: backslash first (or later escapes get double-escaped),
-  // then the ffmpeg filtergraph metacharacters. A literal comma or semicolon
-  // in the caption text (very likely in normal sentences — "hook, education,
-  // offer" style copy, or numbers like "1,000") would otherwise terminate
-  // the drawtext filter early and corrupt the rest of the -vf chain, crashing
-  // a paid run. This was happening silently whenever a script line had a comma.
   return String(s)
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\u2019")
     .replace(/:/g, "\\:")
-    .replace(/%/g, "\\%")
-    .replace(/,/g, "\\,")
-    .replace(/;/g, "\\;");
+    .replace(/%/g, "\\%");
 }
 
 function drawtextForLines(lines, start, end) {
@@ -149,23 +115,18 @@ function drawtextForLines(lines, start, end) {
     return (
       `drawtext=text='${safe}':fontcolor=white:fontsize=${FONT_SIZE}:box=1:boxcolor=black@0.55:` +
       `boxborderw=14:x=(w-text_w)/2:y=${y}:` +
-      `enable='between(t,${start},${end})'`
+      `enable='between(t\\,${start}\\,${end})'`
     );
   });
 }
 
-// Try to build caption groups from ElevenLabs word-level timestamps.
-// Returns null if the shape doesn't match what we expect, so the caller
-// can fall back safely instead of crashing.
-function captionsFromTimestamps(rawTimestamps, totalDuration) {
+function captionsFromTimestamps(rawTimestamps) {
   if (!Array.isArray(rawTimestamps) || rawTimestamps.length === 0) return null;
-
   const words = rawTimestamps.map(t => ({
     word: t.word ?? t.text ?? t.char ?? "",
     start: t.start ?? t.start_time ?? t.timestamp_start ?? null,
     end: t.end ?? t.end_time ?? t.timestamp_end ?? null
   }));
-
   if (words.some(w => !w.word || w.start === null || w.end === null)) return null;
 
   const groups = [];
@@ -180,9 +141,9 @@ function captionsFromTimestamps(rawTimestamps, totalDuration) {
   return groups;
 }
 
-// Fallback: split into small groups, timed proportionally by word count
-// across the scene's actual audio duration (not real timing data, but far
-// closer than a flat 50/50 split).
+// Self-computed: split into small word groups, timed proportionally across
+// the scene's real audio duration. Fully deterministic — no dependency on
+// any external API's timestamp format.
 function captionsFromProportionalSplit(text, totalDuration) {
   const words = String(text).split(/\s+/).filter(Boolean);
   const groups = [];
@@ -197,10 +158,22 @@ function captionsFromProportionalSplit(text, totalDuration) {
   }));
 }
 
-function buildCaptionFilters(scene) {
-  const groups =
-    captionsFromTimestamps(scene.wordTimestamps, scene.audioDuration) ||
-    captionsFromProportionalSplit(scene.text, scene.audioDuration);
+function buildCaptionFilters(scene, sceneIndex) {
+  let groups = null;
+  let source = "proportional (self-computed)";
+
+  if (USE_FAL_TIMESTAMPS) {
+    groups = captionsFromTimestamps(scene.wordTimestamps);
+    if (groups) source = "fal word timestamps";
+  }
+  if (!groups) {
+    groups = captionsFromProportionalSplit(scene.text, scene.audioDuration);
+  }
+
+  console.log(`Scene ${sceneIndex}: caption source = ${source}`);
+  groups.forEach((g, i) =>
+    console.log(`  [${i}] ${g.start.toFixed(2)}s - ${g.end.toFixed(2)}s : "${g.text}"`)
+  );
 
   return groups
     .flatMap(g => {
@@ -318,27 +291,23 @@ async function getScene(line, sceneIndex, tmpDir) {
 
 // --- Assembly (always runs fresh — this is the free, iterable part) ----
 
-function renderScene(scene, sceneIndex, tmpDir, extraHoldSeconds = 0) {
+function renderScene(scene, sceneIndex, tmpDir) {
   const outPath = `${tmpDir}/scene${sceneIndex}_final.mp4`;
   const videoDuration = ffprobeDuration(scene.videoPath);
-  const captionFilters = buildCaptionFilters(scene);
-  const targetDuration = scene.audioDuration + extraHoldSeconds;
+  const captionFilters = buildCaptionFilters(scene, sceneIndex);
 
-  // If the voiceover (plus any extra hold on the final scene) runs longer
-  // than the Kling clip, freeze the last frame to cover the gap instead of
-  // letting the video end early.
-  const needsExtend = targetDuration > videoDuration + 0.05;
+  const needsExtend = scene.audioDuration > videoDuration + 0.05;
   const tpad = needsExtend
-    ? `,tpad=stop_mode=clone:stop_duration=${(targetDuration - videoDuration).toFixed(2)}`
+    ? `,tpad=stop_mode=clone:stop_duration=${(scene.audioDuration - videoDuration).toFixed(2)}`
     : "";
 
   const cmd = [
     "ffmpeg -y",
     `-i "${scene.videoPath}"`,
     `-i "${scene.audioPath}"`,
-    `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920${tpad},${WATERMARK_FILTER},${captionFilters}"`,
+    `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920${tpad},${captionFilters}"`,
     "-map 0:v:0 -map 1:a:0",
-    `-t ${targetDuration.toFixed(2)}`,
+    `-t ${scene.audioDuration.toFixed(2)}`,
     "-c:v libx264 -preset fast -crf 23 -c:a aac",
     `"${outPath}"`
   ].join(" ");
@@ -358,55 +327,29 @@ async function main() {
   const tmpDir = "/tmp/tiktok_frames";
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  const lines = buildScript(posts);
-  console.log(`Script: ${lines.length} scene(s) —`, lines);
+  const [line1, line2] = buildScript(posts);
 
-  const scenes = [];
-  for (let i = 0; i < lines.length; i++) {
-    scenes.push(await getScene(lines[i], i + 1, tmpDir));
-  }
+  const scene1 = await getScene(line1, 1, tmpDir);
+  const scene2 = await getScene(line2, 2, tmpDir);
 
-  console.log("Rendering scenes with captions + watermark (free — local ffmpeg only)...");
-  const finals = scenes.map((scene, i) => {
-    const isLast = i === scenes.length - 1;
-    return renderScene(scene, i + 1, tmpDir, isLast ? FINAL_SCENE_HOLD_SECONDS : 0);
-  });
+  console.log("Rendering scenes with captions (free — local ffmpeg only)...");
+  const final1 = renderScene(scene1, 1, tmpDir);
+  const final2 = renderScene(scene2, 2, tmpDir);
 
   console.log("Concatenating scenes (re-encoding for clean sync)...");
   const concatFile = `${tmpDir}/concat.txt`;
-  fs.writeFileSync(concatFile, finals.map(f => `file '${f}'`).join("\n") + "\n");
+  fs.writeFileSync(concatFile, `file '${final1}'\nfile '${final2}'\n`);
 
-  const concatOut = `${tmpDir}/concat_out.mp4`;
   execSync(
     [
       "ffmpeg -y",
       `-f concat -safe 0 -i "${concatFile}"`,
       "-c:v libx264 -preset fast -crf 23 -c:a aac",
       "-movflags +faststart",
-      `"${concatOut}"`
+      "today_tiktok.mp4"
     ].join(" "),
     { stdio: "inherit" }
   );
-
-  if (fs.existsSync(MUSIC_PATH)) {
-    console.log("Mixing background music bed under narration...");
-    execSync(
-      [
-        "ffmpeg -y",
-        `-i "${concatOut}"`,
-        `-stream_loop -1 -i "${MUSIC_PATH}"`,
-        `-filter_complex "[1:a]volume=${MUSIC_VOLUME}[music];[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]"`,
-        '-map 0:v -map "[aout]"',
-        "-c:v copy -c:a aac -shortest",
-        "-movflags +faststart",
-        "today_tiktok.mp4"
-      ].join(" "),
-      { stdio: "inherit" }
-    );
-  } else {
-    fs.copyFileSync(concatOut, "today_tiktok.mp4");
-    console.log("No assets/bgmusic.mp3 in the repo — skipping music bed (narration-only, as before).");
-  }
 
   console.log("Wrote today_tiktok.mp4");
 }
