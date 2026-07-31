@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@fal-ai/client": "^1.10.1",
+    "@higgsfield/client": "^0.2.1",
+    "sharp": "^0.35.3"
+  }
+}
