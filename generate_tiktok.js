@@ -13,16 +13,20 @@
 // actually committed and pushed to GitHub after a paid run — do that before
 // the Replit session ends/resets.
 //
+// CTA NOTE: TikTok requires 1,000+ followers before a personal account's bio
+// link is even clickable, so "link in bio" was a broken CTA for a new
+// account. Scene 2 now points to the brand name instead.
+//
 // CAPTIONS: self-computed proportional split (small word groups timed across
-// the scene's real audio duration), with each caption line drawn separately
-// and its "enable" window's commas escaped — the earlier freeze bug was
-// ffmpeg's filter-graph parser reading unescaped commas inside
-// between(t,start,end) as chain separators, not a timing/data problem.
+// the scene's real audio duration), with each caption line drawn separately;
+// its "enable" window's commas are escaped (unescaped commas were previously
+// being read by ffmpeg's filter-graph parser as chain separators, which is
+// what caused captions to freeze instead of changing).
 //
 // DURATION: Kling only supports 5s or 10s clips. If audio runs longer than
 // the clip, the last frame is frozen (ffmpeg tpad) to cover the remainder,
-// with a small safety margin added since ffprobe/Kling's actual returned
-// duration can be a touch off from the nominal 5/10 value.
+// with a small safety margin since ffprobe/Kling's actual returned duration
+// can be a touch off from the nominal 5/10 value.
 //
 // KNOWN LIMITATION: Kling's mouth animation is prompt-driven, not
 // audio-driven — an accepted trade-off, not a bug.
@@ -37,7 +41,7 @@ const { fal } = require("@fal-ai/client");
 const CACHE_DIR = path.join(process.cwd(), ".cache", "tiktok");
 const FORCE_REGEN = process.env.FORCE_REGEN === "1";
 const VOICE_SPEED = 0.85;
-const EXTEND_SAFETY_MARGIN = 0.35; // extra seconds padded onto freeze-extend to avoid boundary cutoffs
+const EXTEND_SAFETY_MARGIN = 0.35;
 
 function downloadFile(url, outPath) {
   return new Promise((resolve, reject) => {
@@ -65,7 +69,7 @@ function buildScript(posts) {
 
   const scene2 =
     `Check out ${meta.product}, just ${price}. ` +
-    `One-time payment, yours forever. Link in bio to get started.`;
+    `One-time payment, yours forever. Visit our website at Smarter Hustle Academy.`;
 
   return [scene1, scene2];
 }
@@ -262,8 +266,6 @@ function renderScene(scene, sceneIndex, tmpDir) {
     `${needsExtend ? `extending by ${extendAmount.toFixed(2)}s (gap ${rawGap.toFixed(2)}s + ${EXTEND_SAFETY_MARGIN}s margin)` : "no extend needed"}`
   );
 
-  // Output length = audio duration + margin, so the freeze-extended tail is
-  // never trimmed away and the video always covers the full voiceover.
   const outputDuration = scene.audioDuration + (needsExtend ? EXTEND_SAFETY_MARGIN : 0);
 
   const cmd = [
