@@ -9,20 +9,20 @@
 // CACHING: generated voice + video for each scene are cached in .cache/tiktok/.
 // Re-running with the SAME script text reuses cached fal.ai output — free.
 // Set FORCE_REGEN=1 to force fresh (billed) generation.
+// IMPORTANT: this cache only survives across sessions if .cache/tiktok/ is
+// actually committed and pushed to GitHub after a paid run — do that before
+// the Replit session ends/resets.
 //
-// CAPTIONS (debugging note): fal's exact response shape for ElevenLabs
-// word-level timestamps isn't fully documented, and the last run using it
-// produced captions that matched the words but did not visibly change over
-// time — meaning the parsed time windows were likely wrong in a way that
-// still happened to show correct text. To isolate the problem, this version
-// TEMPORARILY IGNORES fal's timestamp data and always uses a self-computed
-// proportional split (a set of small time windows we fully control), and
-// logs each window to the console. This lets us confirm whether captions
-// change at all once the timing math is fully known/controlled by this
-// script — using the already-cached (free) scene assets, no new charges.
+// CAPTIONS: self-computed proportional split (small word groups timed across
+// the scene's real audio duration), with each caption line drawn separately
+// and its "enable" window's commas escaped — the earlier freeze bug was
+// ffmpeg's filter-graph parser reading unescaped commas inside
+// between(t,start,end) as chain separators, not a timing/data problem.
 //
 // DURATION: Kling only supports 5s or 10s clips. If audio runs longer than
-// the clip, the last frame is frozen (ffmpeg tpad) to cover the remainder.
+// the clip, the last frame is frozen (ffmpeg tpad) to cover the remainder,
+// with a small safety margin added since ffprobe/Kling's actual returned
+// duration can be a touch off from the nominal 5/10 value.
 //
 // KNOWN LIMITATION: Kling's mouth animation is prompt-driven, not
 // audio-driven — an accepted trade-off, not a bug.
@@ -37,7 +37,7 @@ const { fal } = require("@fal-ai/client");
 const CACHE_DIR = path.join(process.cwd(), ".cache", "tiktok");
 const FORCE_REGEN = process.env.FORCE_REGEN === "1";
 const VOICE_SPEED = 0.85;
-const USE_FAL_TIMESTAMPS = false; // temporarily disabled — see note above
+const EXTEND_SAFETY_MARGIN = 0.35; // extra seconds padded onto freeze-extend to avoid boundary cutoffs
 
 function downloadFile(url, outPath) {
   return new Promise((resolve, reject) => {
@@ -120,30 +120,6 @@ function drawtextForLines(lines, start, end) {
   });
 }
 
-function captionsFromTimestamps(rawTimestamps) {
-  if (!Array.isArray(rawTimestamps) || rawTimestamps.length === 0) return null;
-  const words = rawTimestamps.map(t => ({
-    word: t.word ?? t.text ?? t.char ?? "",
-    start: t.start ?? t.start_time ?? t.timestamp_start ?? null,
-    end: t.end ?? t.end_time ?? t.timestamp_end ?? null
-  }));
-  if (words.some(w => !w.word || w.start === null || w.end === null)) return null;
-
-  const groups = [];
-  for (let i = 0; i < words.length; i += WORDS_PER_CAPTION) {
-    const slice = words.slice(i, i + WORDS_PER_CAPTION);
-    groups.push({
-      text: slice.map(w => w.word).join(" ").trim(),
-      start: slice[0].start,
-      end: slice[slice.length - 1].end
-    });
-  }
-  return groups;
-}
-
-// Self-computed: split into small word groups, timed proportionally across
-// the scene's real audio duration. Fully deterministic — no dependency on
-// any external API's timestamp format.
 function captionsFromProportionalSplit(text, totalDuration) {
   const words = String(text).split(/\s+/).filter(Boolean);
   const groups = [];
@@ -159,18 +135,9 @@ function captionsFromProportionalSplit(text, totalDuration) {
 }
 
 function buildCaptionFilters(scene, sceneIndex) {
-  let groups = null;
-  let source = "proportional (self-computed)";
+  const groups = captionsFromProportionalSplit(scene.text, scene.audioDuration);
 
-  if (USE_FAL_TIMESTAMPS) {
-    groups = captionsFromTimestamps(scene.wordTimestamps);
-    if (groups) source = "fal word timestamps";
-  }
-  if (!groups) {
-    groups = captionsFromProportionalSplit(scene.text, scene.audioDuration);
-  }
-
-  console.log(`Scene ${sceneIndex}: caption source = ${source}`);
+  console.log(`Scene ${sceneIndex}: caption windows`);
   groups.forEach((g, i) =>
     console.log(`  [${i}] ${g.start.toFixed(2)}s - ${g.end.toFixed(2)}s : "${g.text}"`)
   );
@@ -214,13 +181,7 @@ function loadFromCache(key) {
   const { videoPath, audioPath, metaPath } = cachedScenePaths(key);
   if (fs.existsSync(videoPath) && fs.existsSync(audioPath) && fs.existsSync(metaPath)) {
     const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-    return {
-      videoPath,
-      audioPath,
-      audioDuration: meta.audioDuration,
-      text: meta.text,
-      wordTimestamps: meta.wordTimestamps || null
-    };
+    return { videoPath, audioPath, audioDuration: meta.audioDuration, text: meta.text };
   }
   return null;
 }
@@ -232,11 +193,7 @@ function saveToCache(key, scene) {
   fs.copyFileSync(scene.audioPath, audioPath);
   fs.writeFileSync(
     metaPath,
-    JSON.stringify(
-      { text: scene.text, audioDuration: scene.audioDuration, wordTimestamps: scene.wordTimestamps || null },
-      null,
-      2
-    )
+    JSON.stringify({ text: scene.text, audioDuration: scene.audioDuration }, null, 2)
   );
 }
 
@@ -245,17 +202,16 @@ function saveToCache(key, scene) {
 async function generateSceneFresh(line, sceneIndex, tmpDir) {
   console.log(`Scene ${sceneIndex}: generating voice (fal.ai — billed)...`);
   const audioResult = await fal.subscribe("fal-ai/elevenlabs/tts/turbo-v2.5", {
-    input: { text: line, speed: VOICE_SPEED, timestamps: true }
+    input: { text: line, speed: VOICE_SPEED }
   });
   const audioUrl = audioResult.data.audio.url;
   const audioPath = `${tmpDir}/scene${sceneIndex}_audio.mp3`;
   await downloadFile(audioUrl, audioPath);
 
-  const wordTimestamps = audioResult.data.timestamps || null;
   const audioDuration = ffprobeDuration(audioPath);
   const klingDuration = audioDuration <= 5 ? "5" : "10";
 
-  console.log(`Scene ${sceneIndex}: animating mascot (fal.ai — billed; audio ${audioDuration.toFixed(1)}s, video ${klingDuration}s)...`);
+  console.log(`Scene ${sceneIndex}: animating mascot (fal.ai — billed; audio ${audioDuration.toFixed(2)}s, requesting video ${klingDuration}s)...`);
   const videoResult = await fal.subscribe("fal-ai/kling-video/v2.6/pro/image-to-video", {
     input: {
       prompt:
@@ -270,7 +226,7 @@ async function generateSceneFresh(line, sceneIndex, tmpDir) {
   const videoPath = `${tmpDir}/scene${sceneIndex}_video.mp4`;
   await downloadFile(videoUrl, videoPath);
 
-  return { videoPath, audioPath, audioDuration, text: line, wordTimestamps };
+  return { videoPath, audioPath, audioDuration, text: line };
 }
 
 async function getScene(line, sceneIndex, tmpDir) {
@@ -296,10 +252,19 @@ function renderScene(scene, sceneIndex, tmpDir) {
   const videoDuration = ffprobeDuration(scene.videoPath);
   const captionFilters = buildCaptionFilters(scene, sceneIndex);
 
-  const needsExtend = scene.audioDuration > videoDuration + 0.05;
-  const tpad = needsExtend
-    ? `,tpad=stop_mode=clone:stop_duration=${(scene.audioDuration - videoDuration).toFixed(2)}`
-    : "";
+  const rawGap = scene.audioDuration - videoDuration;
+  const needsExtend = rawGap > 0;
+  const extendAmount = needsExtend ? rawGap + EXTEND_SAFETY_MARGIN : 0;
+  const tpad = needsExtend ? `,tpad=stop_mode=clone:stop_duration=${extendAmount.toFixed(2)}` : "";
+
+  console.log(
+    `Scene ${sceneIndex}: audio=${scene.audioDuration.toFixed(2)}s video=${videoDuration.toFixed(2)}s ` +
+    `${needsExtend ? `extending by ${extendAmount.toFixed(2)}s (gap ${rawGap.toFixed(2)}s + ${EXTEND_SAFETY_MARGIN}s margin)` : "no extend needed"}`
+  );
+
+  // Output length = audio duration + margin, so the freeze-extended tail is
+  // never trimmed away and the video always covers the full voiceover.
+  const outputDuration = scene.audioDuration + (needsExtend ? EXTEND_SAFETY_MARGIN : 0);
 
   const cmd = [
     "ffmpeg -y",
@@ -307,7 +272,7 @@ function renderScene(scene, sceneIndex, tmpDir) {
     `-i "${scene.audioPath}"`,
     `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920${tpad},${captionFilters}"`,
     "-map 0:v:0 -map 1:a:0",
-    `-t ${scene.audioDuration.toFixed(2)}`,
+    `-t ${outputDuration.toFixed(2)}`,
     "-c:v libx264 -preset fast -crf 23 -c:a aac",
     `"${outPath}"`
   ].join(" ");
