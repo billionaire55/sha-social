@@ -1,13 +1,10 @@
 name: SHA Daily Offer — Social Auto-Post
-
 on:
   schedule:
     - cron: "0 13 * * *"
   workflow_dispatch: {}
-
 permissions:
   contents: write
-
 jobs:
   post:
     runs-on: ubuntu-latest
@@ -15,26 +12,22 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
-
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-
       - name: Install dependencies
         run: |
+          rm -f package-lock.json
           npm install sharp @fal-ai/client @higgsfield/client
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-
       - name: Generate today's posts with Claude (Agent 1)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: node generate_posts.js
-
       - name: Render the branded offer image
         run: node generate_image.js
-
       - name: Restore fal.ai scene cache
         uses: actions/cache@v4
         with:
@@ -42,7 +35,6 @@ jobs:
           key: tiktok-cache-${{ hashFiles('today_posts.json') }}
           restore-keys: |
             tiktok-cache-
-
       - name: Restore Higgsfield scene cache
         uses: actions/cache@v4
         with:
@@ -50,7 +42,6 @@ jobs:
           key: tiktok-hf-cache-${{ hashFiles('today_posts.json') }}
           restore-keys: |
             tiktok-hf-cache-
-
       - name: Render mascot video (TikTok/YouTube)
         env:
           FAL_KEY: ${{ secrets.FAL_KEY }}
@@ -70,7 +61,6 @@ jobs:
           else
             echo "No video platform scheduled today — skipping."
           fi
-
       - name: Commit image + posts so the image URL is public BEFORE posting
         run: |
           git config user.name "sha-bot"
@@ -80,7 +70,6 @@ jobs:
           git add today_image.png today_tiktok.mp4 today_posts.json posted-log/ || true
           git commit -m "Daily offer assets $(date +%Y-%m-%d)" || echo "nothing to commit"
           git push || echo "no push"
-
       - name: Publish to social platforms via Postproxy
         env:
           POSTPROXY_API_KEY: ${{ secrets.POSTPROXY_API_KEY }}
