@@ -9,24 +9,29 @@
 // CACHING: generated voice + video for each scene are cached in .cache/tiktok/.
 // Re-running with the SAME script text reuses cached fal.ai output — free.
 // Set FORCE_REGEN=1 to force fresh (billed) generation.
-// IMPORTANT: this cache only survives across sessions if .cache/tiktok/ is
-// actually committed and pushed to GitHub after a paid run — do that before
-// the Replit session ends/resets.
+// This cache only survives across sessions once committed and PUSHED to
+// GitHub (via the Git panel, not raw `git push` — that has no credentials
+// in this environment). It is also excluded by a .gitignore rule somewhere
+// in this environment, so adding it always requires `git add -f`.
 //
 // CTA NOTE: TikTok requires 1,000+ followers before a personal account's bio
-// link is even clickable, so "link in bio" was a broken CTA for a new
-// account. Scene 2 now points to the brand name instead.
+// link is clickable, so scene 2 points to the brand name instead of "link
+// in bio." Kept short deliberately — see DURATION note below.
 //
 // CAPTIONS: self-computed proportional split (small word groups timed across
-// the scene's real audio duration), with each caption line drawn separately;
-// its "enable" window's commas are escaped (unescaped commas were previously
-// being read by ffmpeg's filter-graph parser as chain separators, which is
-// what caused captions to freeze instead of changing).
+// the scene's real audio duration), each caption line drawn separately with
+// its "enable" window's commas escaped (unescaped commas were previously
+// read by ffmpeg's filter-graph parser as chain separators, causing captions
+// to freeze instead of changing).
 //
-// DURATION: Kling only supports 5s or 10s clips. If audio runs longer than
-// the clip, the last frame is frozen (ffmpeg tpad) to cover the remainder,
-// with a small safety margin since ffprobe/Kling's actual returned duration
-// can be a touch off from the nominal 5/10 value.
+// DURATION: Kling only generates 5s or 10s clips. If the voiceover runs
+// longer than the clip (e.g. a long product name pushes scene 2 past 10s),
+// the clip is SEAMLESSLY LOOPED (ffmpeg -stream_loop) to cover the gap,
+// instead of freezing on the last frame — freezing stopped the mouth/gesture
+// motion entirely for the remainder, which read as "her lips stopped
+// moving." Looping keeps the animation continuously in motion, at the cost
+// of being visibly repetitive if the gap is large. Keeping scene 2's CTA
+// short also reduces how often looping is needed at all.
 //
 // KNOWN LIMITATION: Kling's mouth animation is prompt-driven, not
 // audio-driven — an accepted trade-off, not a bug.
@@ -41,7 +46,6 @@ const { fal } = require("@fal-ai/client");
 const CACHE_DIR = path.join(process.cwd(), ".cache", "tiktok");
 const FORCE_REGEN = process.env.FORCE_REGEN === "1";
 const VOICE_SPEED = 0.85;
-const EXTEND_SAFETY_MARGIN = 0.35;
 
 function downloadFile(url, outPath) {
   return new Promise((resolve, reject) => {
@@ -69,7 +73,7 @@ function buildScript(posts) {
 
   const scene2 =
     `Check out ${meta.product}, just ${price}. ` +
-    `One-time payment, yours forever. Visit our website at Smarter Hustle Academy.`;
+    `One-time payment, yours forever — visit Smarter Hustle Academy.`;
 
   return [scene1, scene2];
 }
@@ -256,25 +260,26 @@ function renderScene(scene, sceneIndex, tmpDir) {
   const videoDuration = ffprobeDuration(scene.videoPath);
   const captionFilters = buildCaptionFilters(scene, sceneIndex);
 
-  const rawGap = scene.audioDuration - videoDuration;
-  const needsExtend = rawGap > 0;
-  const extendAmount = needsExtend ? rawGap + EXTEND_SAFETY_MARGIN : 0;
-  const tpad = needsExtend ? `,tpad=stop_mode=clone:stop_duration=${extendAmount.toFixed(2)}` : "";
+  const needsLoop = scene.audioDuration > videoDuration + 0.05;
 
   console.log(
     `Scene ${sceneIndex}: audio=${scene.audioDuration.toFixed(2)}s video=${videoDuration.toFixed(2)}s ` +
-    `${needsExtend ? `extending by ${extendAmount.toFixed(2)}s (gap ${rawGap.toFixed(2)}s + ${EXTEND_SAFETY_MARGIN}s margin)` : "no extend needed"}`
+    `${needsLoop ? "looping clip to cover full audio length (no freeze)" : "no loop needed"}`
   );
 
-  const outputDuration = scene.audioDuration + (needsExtend ? EXTEND_SAFETY_MARGIN : 0);
+  // -stream_loop -1 on the video INPUT loops it indefinitely; -t on the
+  // output trims the combined result to exactly the audio length. This
+  // keeps the mascot continuously animated instead of freezing on a still
+  // frame when the voiceover runs longer than one Kling clip.
+  const videoInputFlags = needsLoop ? "-stream_loop -1" : "";
 
   const cmd = [
     "ffmpeg -y",
-    `-i "${scene.videoPath}"`,
+    `${videoInputFlags} -i "${scene.videoPath}"`,
     `-i "${scene.audioPath}"`,
-    `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920${tpad},${captionFilters}"`,
+    `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,${captionFilters}"`,
     "-map 0:v:0 -map 1:a:0",
-    `-t ${outputDuration.toFixed(2)}`,
+    `-t ${scene.audioDuration.toFixed(2)}`,
     "-c:v libx264 -preset fast -crf 23 -c:a aac",
     `"${outPath}"`
   ].join(" ");
