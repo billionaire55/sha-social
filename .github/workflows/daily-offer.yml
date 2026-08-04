@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           rm -f package-lock.json
-          npm install sharp @fal-ai/client @higgsfield/client
+          npm install sharp @fal-ai/client @higgsfield/client@latest
           sudo apt-get update
           sudo apt-get install -y ffmpeg
       - name: Generate today's posts with Claude (Agent 1)
