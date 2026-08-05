@@ -17,7 +17,9 @@ jobs:
       - name: Install dependencies
         run: |
           rm -f package-lock.json
-          npm install sharp
+          rm -rf node_modules
+          npm install sharp --no-save
+          npm install
       - name: Generate blog promo image
         env:
           BLOG_TITLE: ${{ github.event.client_payload.title }}
