@@ -2,6 +2,7 @@ name: SHA Blog Promo Post
 on:
   repository_dispatch:
     types: [blog-published]
+  workflow_dispatch: {}
 permissions:
   contents: write
 jobs:
@@ -18,12 +19,12 @@ jobs:
         run: |
           rm -f package-lock.json
           rm -rf node_modules
-          npm install sharp --no-save
           npm install
+          npm install --os=linux --cpu=x64 --libc=glibc sharp --no-save
       - name: Generate blog promo image
         env:
-          BLOG_TITLE: ${{ github.event.client_payload.title }}
-          BLOG_EXCERPT: ${{ github.event.client_payload.excerpt }}
+          BLOG_TITLE: ${{ github.event.client_payload.title || 'Test Post' }}
+          BLOG_EXCERPT: ${{ github.event.client_payload.excerpt || 'Test excerpt' }}
         run: node --input-type=module < generate-blog-promo-card.mjs
       - name: Commit promo image
         run: |
@@ -36,6 +37,6 @@ jobs:
         env:
           POSTPROXY_API_KEY: ${{ secrets.POSTPROXY_API_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          BLOG_TITLE: ${{ github.event.client_payload.title }}
-          BLOG_URL: ${{ github.event.client_payload.url }}
+          BLOG_TITLE: ${{ github.event.client_payload.title || 'Test Post' }}
+          BLOG_URL: ${{ github.event.client_payload.url || 'https://smarterhustleacademy.com' }}
         run: node --input-type=module < post-blog-promo.mjs
