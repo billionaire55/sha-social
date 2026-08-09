@@ -14,9 +14,15 @@
 // in this environment). It is also excluded by a .gitignore rule somewhere
 // in this environment, so adding it always requires `git add -f`.
 //
+// SCRIPT SOURCE: uses the full tiktok_scenes array from today_posts.json
+// (hook / what's inside / outcome / offer / CTA — 5 scenes as of the
+// educational-content update), same as generate_video_higgsfield.js, so this
+// fallback carries the same informative content instead of a generic pitch.
+//
 // CTA NOTE: TikTok requires 1,000+ followers before a personal account's bio
-// link is clickable, so scene 2 points to the brand name instead of "link
-// in bio." Kept short deliberately — see DURATION note below.
+// link is clickable — the CTA scene text should point to the brand name
+// rather than "link in bio" unless that's been changed. Kept short
+// deliberately — see DURATION note below.
 //
 // CAPTIONS: self-computed proportional split (small word groups timed across
 // the scene's real audio duration), each caption line drawn separately with
@@ -64,6 +70,14 @@ function mascotImageUrl() {
 }
 
 function buildScript(posts) {
+  // Primary path: use the full tiktok_scenes array written by generate_posts.js
+  // (hook / what's inside / outcome / offer / CTA) so this fallback carries the
+  // same educational content as the Higgsfield path instead of a generic pitch.
+  if (Array.isArray(posts.tiktok_scenes) && posts.tiktok_scenes.length > 0) {
+    return posts.tiktok_scenes.map(s => String(s).trim()).filter(Boolean);
+  }
+
+  // Last-resort fallback only — should not normally be hit.
   const meta = posts._meta;
   const price = meta.price === "$0" ? "free" : meta.price;
 
@@ -299,18 +313,20 @@ async function main() {
   const tmpDir = "/tmp/tiktok_frames";
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  const [line1, line2] = buildScript(posts);
+  const lines = buildScript(posts);
+  console.log(`Script: ${lines.length} scene(s) —`, lines);
 
-  const scene1 = await getScene(line1, 1, tmpDir);
-  const scene2 = await getScene(line2, 2, tmpDir);
+  const scenes = [];
+  for (let i = 0; i < lines.length; i++) {
+    scenes.push(await getScene(lines[i], i + 1, tmpDir));
+  }
 
   console.log("Rendering scenes with captions (free — local ffmpeg only)...");
-  const final1 = renderScene(scene1, 1, tmpDir);
-  const final2 = renderScene(scene2, 2, tmpDir);
+  const finals = scenes.map((scene, i) => renderScene(scene, i + 1, tmpDir));
 
   console.log("Concatenating scenes (re-encoding for clean sync)...");
   const concatFile = `${tmpDir}/concat.txt`;
-  fs.writeFileSync(concatFile, `file '${final1}'\nfile '${final2}'\n`);
+  fs.writeFileSync(concatFile, finals.map(f => `file '${f}'`).join("\n") + "\n");
 
   execSync(
     [
