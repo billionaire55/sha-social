@@ -11,6 +11,7 @@ VOICE: street-smart digital mentor. Direct, motivational, plain English. Lead wi
 
 HARD RULES:
 - NEVER promise specific income or guarantees. Systems and realistic possibilities only.
+- NEVER invent product contents, features, page counts, or specifics that were not given to you in the "What's actually inside" line below. If that line is missing or says "FILL IN", write an honest, general statement about the format (e.g. "a step-by-step guide you work through at your own pace") instead of making up specifics.
 - Emphasize ACCESSIBLE PRICING and IMMEDIATE UTILITY. Consumer confidence is weak; position low-cost products as smart, low-risk moves ("costs less than dinner out", "yours forever, no subscription", "pays for itself the first time you use it").
 - Acknowledge income pressure with empathy, never fear-mongering.
 - 100% async brand: never mention calls, coaching, webinars, or live anything.
@@ -28,15 +29,16 @@ OUTPUT: Respond with ONLY a valid JSON object, no markdown fences, no commentary
   "pinterest_title": "under 100 chars, keyword-rich",
   "pinterest_description": "under 400 chars, evergreen searchable terms, CTA",
   "tiktok_scenes": [
-    "hook line, 8-12 words, stop-the-scroll, ties to today's economic angle — must be speakable in under 5 seconds",
-    "one real educational tip tied to the product's topic, 10-14 words, under 5 seconds spoken",
-    "offer beat: what's included plus why it's low-risk, mention the price naturally, 10-14 words, under 5 seconds spoken",
-    "CTA, 8-10 words, urgency plus 'link in bio', under 5 seconds spoken"
+    "HOOK — 8-12 words, stop-the-scroll, ties to today's economic angle — speakable in under 5 seconds",
+    "WHAT'S INSIDE — 10-14 words, tells the viewer specifically what they get/what's covered, built directly from the 'What's actually inside' line provided to you — do not invent details beyond what was given",
+    "OUTCOME — 10-14 words, what the person will actually be able to DO or know after going through it — concrete, not vague hype",
+    "OFFER — 10-14 words, price stated naturally plus why it's low-risk (one-time, no subscription, etc.)",
+    "CTA — 8-10 words, urgency plus 'link in bio'"
   ],
   "graphic_headline": "punchy hook for the post image, under 40 chars, title case, do NOT include the price",
   "graphic_subline": "supporting line for the image, under 60 chars"
 }
-tiktok_scenes drives an automated voiced video (fal.ai + ElevenLabs + ffmpeg) — every line is spoken aloud by a TTS voice, so keep each one natural to say out loud: no markdown, no hashtags, no emoji, no abbreviations that don't sound right read aloud. Always exactly 4 array entries, in this order: hook, education, offer, CTA.
+tiktok_scenes drives an automated voiced video (fal.ai/Higgsfield + ElevenLabs + ffmpeg) — every line is spoken aloud by a TTS voice, so keep each one natural to say out loud: no markdown, no hashtags, no emoji, no abbreviations that don't sound right read aloud. Always exactly 5 array entries, in this exact order: hook, what's inside, outcome, offer, CTA. The goal of this video is for a viewer to walk away knowing concretely what they'd be getting, not just that something is for sale.
 Escape characters correctly for JSON.
 `.trim();
 
@@ -94,10 +96,16 @@ function parsePostsJson(rawText) {
 
 async function main() {
   const offer = todayOffer();
+  const whatsInside =
+    offer.whats_inside && !/^FILL IN/i.test(offer.whats_inside.trim())
+      ? offer.whats_inside
+      : "Not provided — do not invent specifics, write an honest general statement about the format only.";
+
   const userMsg =
     `Date: ${new Date().toISOString().slice(0, 10)}\n` +
     `Product: ${offer.product}\nPrice: ${offer.price}\nProduct URL: ${offer.url}\n` +
     `Offer hook for today: ${offer.hook}\n` +
+    `What's actually inside: ${whatsInside}\n` +
     `Priority platforms: ${offer.platforms.join(", ")}`;
 
   let posts;
