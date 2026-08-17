@@ -234,7 +234,13 @@ async function generateSceneFresh(line, sceneIndex, tmpDir) {
   const klingDuration = audioDuration <= 5 ? "5" : "10";
 
   console.log(`Scene ${sceneIndex}: animating mascot (fal.ai — billed; audio ${audioDuration.toFixed(2)}s, requesting video ${klingDuration}s)...`);
-  const videoResult = await fal.subscribe("fal-ai/kling-video/v2.6/pro/image-to-video", {
+  // Switched from /pro/ to /standard/ tier on 2026-08-17 -- Pro tier was
+  // burning through fal.ai credits in under a day (roughly $0.20+/sec vs
+  // Standard's ~$0.08-0.11/sec). For a simple animated mascot talking-head
+  // video, Standard quality is more than sufficient -- Pro's extra fidelity
+  // is wasted on this use case. If quality looks noticeably worse after
+  // this change, that's the tradeoff to weigh against the cost difference.
+  const videoResult = await fal.subscribe("fal-ai/kling-video/v2.6/standard/image-to-video", {
     input: {
       prompt:
         "Confident cartoon presenter speaking directly to camera, animated mouth as if explaining " +
