@@ -289,13 +289,30 @@ async function generateSceneFresh(line, sceneIndex, tmpDir) {
     // added above will surface the new message immediately rather than
     // failing silently, and the fal.ai fallback keeps today's post going
     // either way.
+    // NOTE: this is the SECOND attempt at the correct request shape.
+    // Attempt 1 (input: {...}) failed with "body.params: Field required".
+    // Attempt 2 (renamed the outer key to params: {...}) failed with the
+    // EXACT SAME error — which is itself informative: it suggests "input"
+    // is the SDK's own required option key (separate from the API body),
+    // and the API body it constructs from that needs a nested "params"
+    // field inside it. This attempt keeps "input" outer (for the SDK) and
+    // nests the fields inside "params" (for the API).
+    //
+    // If this ALSO fails with the same message, stop guessing here —
+    // that would mean two structurally different theories both missed,
+    // and the fastest path is checking Higgsfield's dashboard/API
+    // playground directly for the exact current schema, or contacting
+    // their support, rather than continuing to burn real API calls on
+    // guesses. The fal.ai fallback keeps daily posting unaffected either way.
     jobSet = await higgsfield.subscribe("/v1/image2video/dop", {
-      params: {
-        model: "dop-turbo",
-        prompt:
-          "Warm illustrated presenter speaking directly to camera, gentle natural gestures, " +
-          "engaging educational energy, clean flat illustration style, subtle camera movement",
-        input_images: [{ type: "image_url", image_url: mascotImageUrl() }]
+      input: {
+        params: {
+          model: "dop-turbo",
+          prompt:
+            "Warm illustrated presenter speaking directly to camera, gentle natural gestures, " +
+            "engaging educational energy, clean flat illustration style, subtle camera movement",
+          input_images: [{ type: "image_url", image_url: mascotImageUrl() }]
+        }
       },
       withPolling: true
     });
