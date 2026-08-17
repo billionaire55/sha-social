@@ -280,8 +280,17 @@ async function generateSceneFresh(line, sceneIndex, tmpDir) {
   console.log(`Scene ${sceneIndex}: animating mascot via Higgsfield (billed; audio ${audioDuration.toFixed(1)}s)...`);
   let jobSet;
   try {
+    // NOTE: the Higgsfield API rejected this call the first time it ran for
+    // real, with error "body.params: Field required" (see video_error.json
+    // from that run). The SDK's own README example uses a key named
+    // "input" here, but the live API actually wants the same object under
+    // a key named "params" instead. This is a one-word fix based directly
+    // on that live error message — if it's still wrong, the error logging
+    // added above will surface the new message immediately rather than
+    // failing silently, and the fal.ai fallback keeps today's post going
+    // either way.
     jobSet = await higgsfield.subscribe("/v1/image2video/dop", {
-      input: {
+      params: {
         model: "dop-turbo",
         prompt:
           "Warm illustrated presenter speaking directly to camera, gentle natural gestures, " +
