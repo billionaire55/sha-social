@@ -10,19 +10,11 @@
 // Requires: assets/mascot.png committed to the repo
 // Requires env: FAL_KEY (voice, unchanged), HIGGSFIELD_KEY_ID, HIGGSFIELD_KEY_SECRET
 //
-// IMPORTANT — UNTESTED AGAINST THE REAL API: this was written from
-// Higgsfield's official SDK docs (github.com/higgsfield-ai/higgsfield-js)
-// without the ability to test against the live API from this environment
-// (network-restricted sandbox). The model id/endpoint below
-// ('/v1/image2video/dop', model 'dop-turbo') is taken directly from the
-// SDK's own documented example, but may need adjustment on the first real
-// run — if it fails, check the Actions log and fix the input shape below;
-// this is a normal part of integrating a new API, not a sign of a deeper
-// problem with the approach.
-//
-// Everything else (voice generation, per-word captions, watermark, final
-// hold, concat, optional music bed) is copied unchanged from
-// generate_tiktok.js — see that file's comments for how those work.
+// ERROR LOGGING: on any failure this script now writes video_error.json
+// with structured diagnostic detail (message, HTTP status if present, the
+// raw response body if present, and which stage failed — voice generation
+// vs Higgsfield animation) and prints the same to the console. The
+// workflow (daily-offer.yml) reads this to decide whether to fail loudly.
 
 const fs = require("fs");
 const path = require("path");
@@ -35,6 +27,7 @@ const { higgsfield, config } = require("@higgsfield/client/v2");
 const CACHE_DIR = path.join(process.cwd(), ".cache", "tiktok_hf");
 const FORCE_REGEN = process.env.FORCE_REGEN === "1";
 const VOICE_SPEED = 0.85;
+const ERROR_LOG_PATH = path.join(process.cwd(), "video_error.json");
 
 const WATERMARK_FILTER =
   "drawtext=text='SMARTERHUSTLEACADEMY.COM':fontcolor=0xD4A017:fontsize=30:" +
@@ -43,6 +36,51 @@ const WATERMARK_FILTER =
 const FINAL_SCENE_HOLD_SECONDS = 1.2;
 const MUSIC_PATH = path.join(process.cwd(), "assets", "bgmusic.mp3");
 const MUSIC_VOLUME = 0.08;
+
+// --- Error diagnostics ----------------------------------------------------
+// Pulls out as much real diagnostic detail as possible from an SDK/HTTP
+// error object, since different libraries (fal, higgsfield) shape their
+// errors differently and the raw JS message alone ("Request failed") is
+// usually useless for figuring out what actually went wrong.
+function extractErrorDetail(e) {
+  const detail = {
+    message: e?.message || String(e),
+    name: e?.name || null,
+    status: e?.status ?? e?.response?.status ?? e?.statusCode ?? null,
+    responseBody: null
+  };
+  try {
+    if (e?.response?.data) {
+      detail.responseBody = typeof e.response.data === "string" ? e.response.data : JSON.stringify(e.response.data);
+    } else if (e?.body) {
+      detail.responseBody = typeof e.body === "string" ? e.body : JSON.stringify(e.body);
+    } else if (e?.error) {
+      detail.responseBody = typeof e.error === "string" ? e.error : JSON.stringify(e.error);
+    }
+  } catch (_) {
+    // best-effort only
+  }
+  return detail;
+}
+
+function writeErrorLog(stage, sceneIndex, e) {
+  const detail = extractErrorDetail(e);
+  const payload = {
+    timestamp: new Date().toISOString(),
+    stage, // "voice_generation" | "higgsfield_animation" | "unknown"
+    sceneIndex: sceneIndex ?? null,
+    ...detail
+  };
+  try {
+    fs.writeFileSync(ERROR_LOG_PATH, JSON.stringify(payload, null, 2));
+  } catch (writeErr) {
+    console.error("Additionally failed to write video_error.json:", writeErr.message);
+  }
+  console.error("=== Higgsfield pipeline failure detail ===");
+  console.error(JSON.stringify(payload, null, 2));
+  console.error("===========================================");
+  return payload;
+}
 
 function downloadFile(url, outPath) {
   return new Promise((resolve, reject) => {
@@ -224,9 +262,15 @@ function saveToCache(key, scene) {
 
 async function generateSceneFresh(line, sceneIndex, tmpDir) {
   console.log(`Scene ${sceneIndex}: generating voice (fal.ai — billed)...`);
-  const audioResult = await fal.subscribe("fal-ai/elevenlabs/tts/turbo-v2.5", {
-    input: { text: line, speed: VOICE_SPEED, timestamps: true }
-  });
+  let audioResult;
+  try {
+    audioResult = await fal.subscribe("fal-ai/elevenlabs/tts/turbo-v2.5", {
+      input: { text: line, speed: VOICE_SPEED, timestamps: true }
+    });
+  } catch (e) {
+    writeErrorLog("voice_generation", sceneIndex, e);
+    throw new Error(`Voice generation (fal.ai) failed on scene ${sceneIndex}: ${e.message}`);
+  }
   const audioUrl = audioResult.data.audio.url;
   const audioPath = `${tmpDir}/scene${sceneIndex}_audio.mp3`;
   await downloadFile(audioUrl, audioPath);
@@ -234,26 +278,33 @@ async function generateSceneFresh(line, sceneIndex, tmpDir) {
   const audioDuration = ffprobeDuration(audioPath);
 
   console.log(`Scene ${sceneIndex}: animating mascot via Higgsfield (billed; audio ${audioDuration.toFixed(1)}s)...`);
-  // NOTE: model/endpoint from Higgsfield's official SDK example — see file
-  // header comment. If this fails, check the returned error shape and
-  // adjust the endpoint/model/input fields, then re-run.
-  const jobSet = await higgsfield.subscribe("/v1/image2video/dop", {
-    input: {
-      model: "dop-turbo",
-      prompt:
-        "Warm illustrated presenter speaking directly to camera, gentle natural gestures, " +
-        "engaging educational energy, clean flat illustration style, subtle camera movement",
-      input_images: [{ type: "image_url", image_url: mascotImageUrl() }]
-    },
-    withPolling: true
-  });
+  let jobSet;
+  try {
+    jobSet = await higgsfield.subscribe("/v1/image2video/dop", {
+      input: {
+        model: "dop-turbo",
+        prompt:
+          "Warm illustrated presenter speaking directly to camera, gentle natural gestures, " +
+          "engaging educational energy, clean flat illustration style, subtle camera movement",
+        input_images: [{ type: "image_url", image_url: mascotImageUrl() }]
+      },
+      withPolling: true
+    });
+  } catch (e) {
+    writeErrorLog("higgsfield_animation", sceneIndex, e);
+    throw new Error(`Higgsfield API call failed on scene ${sceneIndex}: ${e.message}`);
+  }
 
   if (!jobSet.isCompleted) {
-    throw new Error(`Higgsfield job did not complete for scene ${sceneIndex}: status=${JSON.stringify(jobSet)}`);
+    const err = new Error(`Higgsfield job did not complete for scene ${sceneIndex}: status=${JSON.stringify(jobSet)}`);
+    writeErrorLog("higgsfield_animation", sceneIndex, err);
+    throw err;
   }
   const videoUrl = jobSet.jobs[0].results?.raw?.url;
   if (!videoUrl) {
-    throw new Error(`Higgsfield job completed but no video URL found: ${JSON.stringify(jobSet.jobs[0])}`);
+    const err = new Error(`Higgsfield job completed but no video URL found: ${JSON.stringify(jobSet.jobs[0])}`);
+    writeErrorLog("higgsfield_animation", sceneIndex, err);
+    throw err;
   }
   const videoPath = `${tmpDir}/scene${sceneIndex}_video.mp4`;
   await downloadFile(videoUrl, videoPath);
@@ -301,6 +352,10 @@ function renderScene(scene, sceneIndex, tmpDir, extraHoldSeconds = 0) {
 }
 
 async function main() {
+  // Clear any stale error log from a previous run so a successful run
+  // doesn't leave an old failure sitting around to confuse the workflow.
+  try { fs.unlinkSync(ERROR_LOG_PATH); } catch (_) {}
+
   const posts = JSON.parse(fs.readFileSync("today_posts.json", "utf8"));
 
   if (!process.env.FAL_KEY) throw new Error("FAL_KEY environment variable not set.");
@@ -360,6 +415,13 @@ async function main() {
 }
 
 main().catch(e => {
+  // Fallback catch-all: if something threw before we could write a more
+  // specific error log above (e.g. JSON parse error, missing env var),
+  // still leave a diagnostic file behind so the workflow's verification
+  // step has something to point to.
+  if (!fs.existsSync(ERROR_LOG_PATH)) {
+    writeErrorLog("unknown", null, e);
+  }
   console.error(e);
   process.exit(1);
 });
