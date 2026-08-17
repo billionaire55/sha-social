@@ -43,6 +43,7 @@ jobs:
           restore-keys: |
             tiktok-hf-cache-
       - name: Render mascot video (TikTok/YouTube)
+        id: render_video
         env:
           FAL_KEY: ${{ secrets.FAL_KEY }}
           HIGGSFIELD_KEY_ID: ${{ secrets.HIGGSFIELD_KEY_ID }}
@@ -54,13 +55,31 @@ jobs:
             const platforms=(p._meta&&p._meta.platforms)||[];
             process.exit((platforms.includes('tiktok')||platforms.includes('youtube'))?0:1);
           "; then
-            node generate_video_higgsfield.js || {
-              echo "::warning::Higgsfield video generation failed — falling back to the fal.ai mascot pipeline for today.";
-              node generate_tiktok.js || echo "::warning::Both video pipelines failed — continuing without video today, other platforms still post.";
-            }
+            echo "video_expected=true" >> "$GITHUB_OUTPUT"
+            if node generate_video_higgsfield.js; then
+              echo "video_status=higgsfield_success" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::Higgsfield video generation failed — see video_error.json (uploaded as an artifact below) for the actual API error. Falling back to the fal.ai mascot pipeline for today."
+              if node generate_tiktok.js; then
+                echo "video_status=fal_fallback_success" >> "$GITHUB_OUTPUT"
+              else
+                echo "::warning::Both video pipelines failed — continuing without video today, other platforms still post."
+                echo "video_status=both_failed" >> "$GITHUB_OUTPUT"
+              fi
+            fi
           else
+            echo "video_expected=false" >> "$GITHUB_OUTPUT"
+            echo "video_status=skipped" >> "$GITHUB_OUTPUT"
             echo "No video platform scheduled today — skipping."
           fi
+      - name: Upload video error detail (only runs if a failure log exists)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-error-log-${{ github.run_id }}
+          path: video_error.json
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Commit image + posts so the image URL is public BEFORE posting
         run: |
           git config user.name "sha-bot"
@@ -75,3 +94,8 @@ jobs:
           POSTPROXY_API_KEY: ${{ secrets.POSTPROXY_API_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node post_to_socials.js
+      - name: Verify video pipeline actually produced video (fails loudly, after posting is already done)
+        if: steps.render_video.outputs.video_status == 'both_failed'
+        run: |
+          echo "::error::Both Higgsfield and the fal.ai fallback failed to produce today_tiktok.mp4. Other platforms still posted today, but TikTok/YouTube got no fresh video. Check the 'video-error-log' artifact on this run for the actual API error, and check fal.ai/dashboard/billing + Higgsfield account status for credit or auth issues."
+          exit 1
