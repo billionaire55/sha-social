@@ -31,14 +31,14 @@ OUTPUT: Respond with ONLY a valid JSON object, no markdown fences, no commentary
   "tiktok_scenes": [
     "HOOK — 8-12 words, stop-the-scroll, ties to today's economic angle — speakable in under 5 seconds",
     "WHAT'S INSIDE — 10-14 words, tells the viewer specifically what they get/what's covered, built directly from the 'What's actually inside' line provided to you — do not invent details beyond what was given",
-    "OUTCOME — 10-14 words, what the person will actually be able to DO or know after going through it — concrete, not vague hype",
+    "SAMPLE TEACH — 14-20 words, actually teaches ONE real, specific technique/tip/step taken directly from the 'Sample teaching point' line provided to you — this must be a genuine usable piece of the content itself, not a description of it. Do not invent a teaching point beyond what was given — if none was given, skip teaching and instead restate a concrete detail from 'What's actually inside' in a different way",
     "OFFER — 10-14 words, price stated naturally plus why it's low-risk (one-time, no subscription, etc.)",
     "CTA — 8-10 words, urgency plus 'link in bio'"
   ],
   "graphic_headline": "punchy hook for the post image, under 40 chars, title case, do NOT include the price",
   "graphic_subline": "supporting line for the image, under 60 chars"
 }
-tiktok_scenes drives an automated voiced video (fal.ai/Higgsfield + ElevenLabs + ffmpeg) — every line is spoken aloud by a TTS voice, so keep each one natural to say out loud: no markdown, no hashtags, no emoji, no abbreviations that don't sound right read aloud. Always exactly 5 array entries, in this exact order: hook, what's inside, outcome, offer, CTA. The goal of this video is for a viewer to walk away knowing concretely what they'd be getting, not just that something is for sale.
+tiktok_scenes drives an automated voiced video (Kie.ai + fal.ai ElevenLabs + ffmpeg) — every line is spoken aloud by a TTS voice, so keep each one natural to say out loud: no markdown, no hashtags, no emoji, no abbreviations that don't sound right read aloud. Always exactly 5 array entries, in this exact order: hook, what's inside, sample teach, offer, CTA. The goal of this video is for a viewer to walk away having actually learned one real thing, not just that something is for sale.
 Escape characters correctly for JSON.
 `.trim();
 
@@ -100,12 +100,17 @@ async function main() {
     offer.whats_inside && !/^FILL IN/i.test(offer.whats_inside.trim())
       ? offer.whats_inside
       : "Not provided — do not invent specifics, write an honest general statement about the format only.";
+  const sampleTeaching =
+    offer.sample_teaching && !/^FILL IN/i.test(offer.sample_teaching.trim())
+      ? offer.sample_teaching
+      : "Not provided — do not invent a teaching point; fall back to restating a detail from What's actually inside instead.";
 
   const userMsg =
     `Date: ${new Date().toISOString().slice(0, 10)}\n` +
     `Product: ${offer.product}\nPrice: ${offer.price}\nProduct URL: ${offer.url}\n` +
     `Offer hook for today: ${offer.hook}\n` +
     `What's actually inside: ${whatsInside}\n` +
+    `Sample teaching point: ${sampleTeaching}\n` +
     `Priority platforms: ${offer.platforms.join(", ")}`;
 
   let posts;
