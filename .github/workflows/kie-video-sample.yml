@@ -1,0 +1,41 @@
+name: Kie.ai Video Sample (Test Only)
+on:
+  workflow_dispatch:
+    inputs:
+      test_line:
+        description: "Script line to test (leave blank to use the default sample line)"
+        required: false
+        default: ""
+permissions:
+  contents: read
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Confirm ffmpeg is available
+        run: ffmpeg -version | head -n 1
+
+      - name: Install dependencies
+        run: npm install @fal-ai/client
+
+      - name: Generate Kie.ai sample video
+        env:
+          FAL_KEY: ${{ secrets.FAL_KEY }}
+          KIE_API_KEY: ${{ secrets.KIE_API_KEY }}
+          TEST_LINE: ${{ github.event.inputs.test_line }}
+        run: node generate_video_kie_sample.js
+
+      - name: Upload sample video as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kie-sample-video
+          path: kie_sample.mp4
+          retention-days: 7
