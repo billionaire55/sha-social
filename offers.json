@@ -6,7 +6,12 @@
     "url": "https://smarterhustleacademy.com",
     "hook": "Mindset Sunday: one income stream is a single point of failure.",
     "whats_inside": "FILL IN: 1 concrete, factual sentence on what's actually in this guide (e.g. number of sections/pages, what it walks you through step by step). Do not leave generic.",
-    "platforms": ["facebook", "x", "pinterest"]
+    "platforms": [
+      "facebook",
+      "x",
+      "pinterest"
+    ],
+    "sample_teaching": "FILL IN: one real, specific technique/tip/step taken directly from this guide — a single usable piece of advice, not a description. E.g. 'One tip from the guide: name your price point out loud before you set it — if it feels slightly too cheap, that's usually the right number.' Leave blank/FILL IN if you don't want to add this yet; the video will fall back to restating what's inside instead."
   },
   "1": {
     "product": "30 Proven TikTok Hook Formulas",
@@ -14,7 +19,14 @@
     "url": "https://smarterhustleacademy.com",
     "hook": "Monday Money Move: you don't need a course, you need a hook that works tonight.",
     "whats_inside": "FILL IN: e.g. '30 ready-to-use hook templates you can plug your own topic into' — only if that's accurate.",
-    "platforms": ["facebook", "x", "linkedin", "tiktok", "youtube"]
+    "platforms": [
+      "facebook",
+      "x",
+      "linkedin",
+      "tiktok",
+      "youtube"
+    ],
+    "sample_teaching": "FILL IN: one real, specific technique/tip/step taken directly from this guide — a single usable piece of advice, not a description. E.g. 'One tip from the guide: name your price point out loud before you set it — if it feels slightly too cheap, that's usually the right number.' Leave blank/FILL IN if you don't want to add this yet; the video will fall back to restating what's inside instead."
   },
   "2": {
     "product": "The Complete Digital Hustle Stack Guide",
@@ -22,7 +34,13 @@
     "url": "https://smarterhustleacademy.com",
     "hook": "Core Skill Tuesday: starting a side hustle used to cost thousands.",
     "whats_inside": "FILL IN: 1 concrete sentence on what's actually covered.",
-    "platforms": ["facebook", "x", "instagram", "pinterest"]
+    "platforms": [
+      "facebook",
+      "x",
+      "instagram",
+      "pinterest"
+    ],
+    "sample_teaching": "FILL IN: one real, specific technique/tip/step taken directly from this guide — a single usable piece of advice, not a description. E.g. 'One tip from the guide: name your price point out loud before you set it — if it feels slightly too cheap, that's usually the right number.' Leave blank/FILL IN if you don't want to add this yet; the video will fall back to restating what's inside instead."
   },
   "3": {
     "product": "48-Hour Income System (Tier 1)",
@@ -30,7 +48,14 @@
     "url": "https://smarterhustleacademy.com",
     "hook": "System Wednesday: two days, one weekend, a real system.",
     "whats_inside": "FILL IN: e.g. what the 48 hours actually walk you through, day by day.",
-    "platforms": ["facebook", "x", "linkedin", "tiktok", "youtube"]
+    "platforms": [
+      "facebook",
+      "x",
+      "linkedin",
+      "tiktok",
+      "youtube"
+    ],
+    "sample_teaching": "FILL IN: one real, specific technique/tip/step taken directly from this guide — a single usable piece of advice, not a description. E.g. 'One tip from the guide: name your price point out loud before you set it — if it feels slightly too cheap, that's usually the right number.' Leave blank/FILL IN if you don't want to add this yet; the video will fall back to restating what's inside instead."
   },
   "4": {
     "product": "Fast Start Bundle",
@@ -38,7 +63,13 @@
     "url": "https://smarterhustleacademy.com",
     "hook": "Payday Thursday: prices went up, your paycheck didn't.",
     "whats_inside": "FILL IN: which specific guides/products are bundled together.",
-    "platforms": ["facebook", "x", "instagram", "pinterest"]
+    "platforms": [
+      "facebook",
+      "x",
+      "instagram",
+      "pinterest"
+    ],
+    "sample_teaching": "FILL IN: one real, specific technique/tip/step taken directly from this guide — a single usable piece of advice, not a description. E.g. 'One tip from the guide: name your price point out loud before you set it — if it feels slightly too cheap, that's usually the right number.' Leave blank/FILL IN if you don't want to add this yet; the video will fall back to restating what's inside instead."
   },
   "5": {
     "product": "Passive Income Quick-Start Checklist (FREE)",
@@ -46,7 +77,15 @@
     "url": "https://smarterhustleacademy.com",
     "hook": "Free Win Friday: 38 steps, 8 pages, $0.",
     "whats_inside": "A 38-step checklist across 8 pages you can work through in order, no prior experience needed.",
-    "platforms": ["facebook", "x", "linkedin", "instagram", "tiktok", "youtube"]
+    "platforms": [
+      "facebook",
+      "x",
+      "linkedin",
+      "instagram",
+      "tiktok",
+      "youtube"
+    ],
+    "sample_teaching": "FILL IN: one real, specific technique/tip/step taken directly from this guide — a single usable piece of advice, not a description. E.g. 'One tip from the guide: name your price point out loud before you set it — if it feels slightly too cheap, that's usually the right number.' Leave blank/FILL IN if you don't want to add this yet; the video will fall back to restating what's inside instead."
   },
   "6": {
     "product": "30-Day Elite Trading Academy (Founding Cohort)",
@@ -54,6 +93,12 @@
     "url": "https://smarterhustleacademy.com",
     "hook": "Founding Cohort Saturday: 25 spots, closing soon, chart-reading from scratch.",
     "whats_inside": "FILL IN: e.g. how the 30 days are structured, what skills/topics are covered week by week.",
-    "platforms": ["facebook", "x", "instagram", "linkedin"]
+    "platforms": [
+      "facebook",
+      "x",
+      "instagram",
+      "linkedin"
+    ],
+    "sample_teaching": "FILL IN: one real, specific technique/tip/step taken directly from this guide — a single usable piece of advice, not a description. E.g. 'One tip from the guide: name your price point out loud before you set it — if it feels slightly too cheap, that's usually the right number.' Leave blank/FILL IN if you don't want to add this yet; the video will fall back to restating what's inside instead."
   }
 }
