@@ -20,8 +20,14 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Confirm ffmpeg is available
-        run: ffmpeg -version | head -n 1
+      - name: Install ffmpeg (includes ffprobe)
+        # Matches daily-offer.yml exactly — the runner's pre-installed ffmpeg
+        # didn't expose ffprobe on PATH, so install via apt like production does.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
 
       - name: Install dependencies
         # Matches daily-offer.yml's exact approach: this repo has no committed
