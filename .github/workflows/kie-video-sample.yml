@@ -24,7 +24,11 @@ jobs:
         run: ffmpeg -version | head -n 1
 
       - name: Install dependencies
-        run: npm install @fal-ai/client
+        # Uses the repo's own package.json/package-lock.json (already correct
+        # for @fal-ai/client, since generate_video_higgsfield.js depends on it
+        # in production) instead of installing the package standalone, which
+        # skipped one of its nested dependencies (eventsource-parser).
+        run: npm install
 
       - name: Generate Kie.ai sample video
         env:
