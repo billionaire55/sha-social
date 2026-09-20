@@ -24,11 +24,13 @@ jobs:
         run: ffmpeg -version | head -n 1
 
       - name: Install dependencies
-        # Uses the repo's own package.json/package-lock.json (already correct
-        # for @fal-ai/client, since generate_video_higgsfield.js depends on it
-        # in production) instead of installing the package standalone, which
-        # skipped one of its nested dependencies (eventsource-parser).
-        run: npm install
+        # Matches daily-offer.yml's exact approach: this repo has no committed
+        # package.json, so always clear any stale lockfile first and install
+        # fresh (a leftover/stale lockfile was the actual cause of the earlier
+        # "Cannot find module 'eventsource-parser'" failure).
+        run: |
+          rm -f package-lock.json
+          npm install @fal-ai/client
 
       - name: Generate Kie.ai sample video
         env:
