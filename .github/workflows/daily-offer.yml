@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           rm -f package-lock.json
-          npm install sharp @fal-ai/client @higgsfield/client@latest
+          npm install sharp @fal-ai/client
           sudo apt-get update
           sudo apt-get install -y ffmpeg
       - name: Generate today's posts with Claude (Agent 1)
@@ -28,26 +28,18 @@ jobs:
         run: node generate_posts.js
       - name: Render the branded offer image
         run: node generate_image.js
-      - name: Restore fal.ai scene cache
+      - name: Restore Kie.ai scene cache
         uses: actions/cache@v4
         with:
-          path: .cache/tiktok
-          key: tiktok-cache-${{ hashFiles('today_posts.json') }}
+          path: .cache/tiktok_kie
+          key: tiktok-kie-cache-${{ hashFiles('today_posts.json') }}
           restore-keys: |
-            tiktok-cache-
-      - name: Restore Higgsfield scene cache
-        uses: actions/cache@v4
-        with:
-          path: .cache/tiktok_hf
-          key: tiktok-hf-cache-${{ hashFiles('today_posts.json') }}
-          restore-keys: |
-            tiktok-hf-cache-
+            tiktok-kie-cache-
       - name: Render mascot video (TikTok/YouTube)
         id: render_video
         env:
           FAL_KEY: ${{ secrets.FAL_KEY }}
-          HIGGSFIELD_KEY_ID: ${{ secrets.HIGGSFIELD_KEY_ID }}
-          HIGGSFIELD_KEY_SECRET: ${{ secrets.HIGGSFIELD_KEY_SECRET }}
+          KIE_API_KEY: ${{ secrets.KIE_API_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           if node -e "
@@ -56,16 +48,11 @@ jobs:
             process.exit((platforms.includes('tiktok')||platforms.includes('youtube'))?0:1);
           "; then
             echo "video_expected=true" >> "$GITHUB_OUTPUT"
-            if node generate_video_higgsfield.js; then
-              echo "video_status=higgsfield_success" >> "$GITHUB_OUTPUT"
+            if node generate_video_kie.js; then
+              echo "video_status=kie_success" >> "$GITHUB_OUTPUT"
             else
-              echo "::warning::Higgsfield video generation failed — see video_error.json (uploaded as an artifact below) for the actual API error. Falling back to the fal.ai mascot pipeline for today."
-              if node generate_tiktok.js; then
-                echo "video_status=fal_fallback_success" >> "$GITHUB_OUTPUT"
-              else
-                echo "::warning::Both video pipelines failed — continuing without video today, other platforms still post."
-                echo "video_status=both_failed" >> "$GITHUB_OUTPUT"
-              fi
+              echo "::warning::Kie.ai video generation failed — see video_error.json (uploaded as an artifact below) for the actual API error. No video today; other platforms still post."
+              echo "video_status=failed" >> "$GITHUB_OUTPUT"
             fi
           else
             echo "video_expected=false" >> "$GITHUB_OUTPUT"
@@ -95,7 +82,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node post_to_socials.js
       - name: Verify video pipeline actually produced video (fails loudly, after posting is already done)
-        if: steps.render_video.outputs.video_status == 'both_failed'
+        if: steps.render_video.outputs.video_status == 'failed'
         run: |
-          echo "::error::Both Higgsfield and the fal.ai fallback failed to produce today_tiktok.mp4. Other platforms still posted today, but TikTok/YouTube got no fresh video. Check the 'video-error-log' artifact on this run for the actual API error, and check fal.ai/dashboard/billing + Higgsfield account status for credit or auth issues."
+          echo "::error::Kie.ai failed to produce today_tiktok.mp4. Other platforms still posted today, but TikTok/YouTube got no fresh video. Check the 'video-error-log' artifact on this run for the actual API error, and check kie.ai/logs + kie.ai/billing for credit or task issues."
           exit 1
