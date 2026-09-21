@@ -27,6 +27,9 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: node generate_posts.js
       - name: Render the branded offer image
+        env:
+          KIE_API_KEY: ${{ secrets.KIE_API_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: node generate_image.js
       - name: Restore Kie.ai scene cache
         uses: actions/cache@v4
