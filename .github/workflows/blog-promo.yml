@@ -38,6 +38,7 @@ jobs:
         env:
           BLOG_TITLE: ${{ github.event.client_payload.title || github.event.inputs.title || 'Test Post (image only, not posted)' }}
           BLOG_EXCERPT: ${{ github.event.client_payload.excerpt || github.event.inputs.excerpt || 'Test excerpt' }}
+          KIE_API_KEY: ${{ secrets.KIE_API_KEY }}
         run: node --input-type=module < generate-blog-promo-card.mjs
       - name: Commit promo image
         run: |
