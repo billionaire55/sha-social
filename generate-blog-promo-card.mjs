@@ -9,6 +9,12 @@
 // time. If Kie.ai fails for any reason — no API key, timeout, task failure —
 // this falls back to the original static mascot crop so the workflow never
 // breaks; this is a nice-to-have, not something worth failing the post over.
+//
+// UPDATED (Sep 23 2026): removed the gold border around the whole card and
+// the gold border around the image panel; headline now auto-sizes so long
+// titles never get cut off; footer labels no longer overlap empty circles;
+// excerpt is sanitized (no page titles / JSON-LD code); Kie prompt now asks
+// for no text inside the picture, and the crop centers on the main subject.
 
 import fs from "fs";
 import https from "https";
@@ -67,11 +73,31 @@ const PANEL_H = 520;
 const COL_X = PANEL_X + PANEL_W + 40;
 const COL_W = W - COL_X - PAD;
 
+// Pick the largest headline size whose wrapped lines fit inside the header.
+function fitTitle(title) {
+  const TOP = 110, BOTTOM = HEADER_H - 34;       // usable band inside the header
+  const MAX_W = W - PAD * 2;
+  for (let font = 68; font >= 34; font -= 2) {
+    const perLine = Math.max(10, Math.floor(MAX_W / (font * 0.56)));
+    const lines = wrap(title, perLine);
+    const lh = Math.round(font * 1.16);
+    if (lines.length * lh <= BOTTOM - TOP) {
+      const start = TOP + (BOTTOM - TOP - lines.length * lh) / 2 + font * 0.9;
+      return { lines, font, lh, start };
+    }
+  }
+  const font = 34, lh = 40;
+  const lines = wrap(title, Math.floor(MAX_W / (font * 0.56))).slice(0, 6);
+  lines[lines.length - 1] = lines[lines.length - 1].replace(/\s*\S*$/, "") + "…";
+  return { lines, font, lh, start: TOP + font * 0.9 };
+}
+
 function baseCardSvg(title, excerpt) {
-  const hLines = wrap(title, 20);
-  const H_FONT = hLines.length > 3 ? 46 : hLines.length === 3 ? 52 : hLines.length === 2 ? 60 : 68;
-  const H_LH   = H_FONT + 12;
-  const H_START = 150 + (HEADER_H - 150 - hLines.length * H_LH) / 2 + H_LH;
+  const fit = fitTitle(title);
+  const hLines = fit.lines;
+  const H_FONT = fit.font;
+  const H_LH   = fit.lh;
+  const H_START = fit.start;
 
   const eLines = wrap(excerpt, 24);
   const E_FONT = 30;
@@ -90,9 +116,7 @@ function baseCardSvg(title, excerpt) {
     { label: "BUNDLES",    cx: 610 },
     { label: "FREE NICHE", cx: 870 },
   ].map(ic => `
-    <circle cx="${ic.cx}" cy="${H - FOOTER_H/2 - 8}" r="24"
-      fill="none" stroke="${GOLD}" stroke-width="2.5"/>
-    <text x="${ic.cx}" y="${H - FOOTER_H/2 + 26}"
+    <text x="${ic.cx}" y="${H - FOOTER_H/2 + 8}"
       text-anchor="middle"
       font-family="Arial,Helvetica,sans-serif" font-size="20" font-weight="700"
       fill="${GOLD}" letter-spacing="1">${esc(ic.label)}</text>
@@ -115,8 +139,6 @@ function baseCardSvg(title, excerpt) {
   </defs>
 
   <rect width="${W}" height="${H}" fill="${CREAM}"/>
-  <rect x="10" y="10" width="${W-20}" height="${H-20}"
-    rx="16" fill="none" stroke="${GOLD}" stroke-width="2.5" opacity="0.55"/>
   <rect x="0" y="0" width="${W}" height="${HEADER_H}" fill="url(#hdrGrad)"/>
   ${dotGrid(0, 0, W, HEADER_H, 28, 2.2, "#ffffff", 0.065)}
   <rect x="0" y="0" width="${W}" height="5" fill="url(#goldGrad)"/>
@@ -169,12 +191,6 @@ function panelMaskSvg() {
   </svg>`;
 }
 
-function panelBorderSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PANEL_W}" height="${PANEL_H}">
-    <rect x="2" y="2" width="${PANEL_W-4}" height="${PANEL_H-4}" rx="18"
-      fill="none" stroke="${GOLD}" stroke-width="5"/>
-  </svg>`;
-}
 
 // --- Kie.ai per-post image generation (new) --------------------------
 
@@ -297,7 +313,8 @@ async function getPanelImageBuffer(title, excerpt) {
       `called Smarter Hustle Academy, visually representing this topic: "${title}" — ${excerpt}. ` +
       `Forest green (#2D6A4F) and gold (#D4A017) color scheme, cream background. Feature the ` +
       `mascot character prominently, doing something visually connected to the topic. Clean flat ` +
-      `illustration style, motivational and trustworthy feel.`;
+      `illustration style, motivational and trustworthy feel. Do NOT include any text, words, ` +
+      `letters, numbers, titles, logos, labels or captions anywhere in the image — pictures only.`;
     const taskId = await createImageTask(prompt, referenceUrl);
     const imageUrl = await waitForImage(taskId);
     console.log("Kie.ai image ready.");
@@ -311,7 +328,15 @@ async function getPanelImageBuffer(title, excerpt) {
 // --- Main --------------------------------------------------------------
 
 const title   = process.env.BLOG_TITLE   || "New Post";
-const excerpt = process.env.BLOG_EXCERPT || "Read the latest on the SHA blog.";
+// Sanitize the excerpt: older runs passed the page <title> + JSON-LD code
+// ("— Smarter Hustle Academy™ { "@context": ...") into this field.
+function cleanExcerpt(raw) {
+  let t = String(raw || "").replace(/\s+/g, " ").trim();
+  t = t.split(/\s[{<]/)[0];                                   // drop code/markup tails
+  t = t.replace(/\s*[—|-]\s*Smarter Hustle Academy™?\s*/gi, " ").trim();
+  return t.length >= 30 ? t : "Read the latest on the SHA blog.";
+}
+const excerpt = cleanExcerpt(process.env.BLOG_EXCERPT);
 
 if (!fs.existsSync(MASCOT_PATH)) {
   throw new Error(`${MASCOT_PATH} not found — the mascot image must be committed to the repo.`);
@@ -321,11 +346,10 @@ const cardBuf = await sharp(Buffer.from(baseCardSvg(title, excerpt))).png().toBu
 
 const panelImageBuffer = await getPanelImageBuffer(title, excerpt);
 const panelCropped = await sharp(panelImageBuffer)
-  .resize(PANEL_W, PANEL_H, { fit: "cover", position: "top" })
+  .resize(PANEL_W, PANEL_H, { fit: "cover", position: sharp.strategy.attention })
   .toBuffer();
 
 const maskBuf = await sharp(Buffer.from(panelMaskSvg())).png().toBuffer();
-const borderBuf = await sharp(Buffer.from(panelBorderSvg())).png().toBuffer();
 
 const maskedPanel = await sharp(panelCropped)
   .composite([{ input: maskBuf, blend: "dest-in" }])
@@ -334,8 +358,7 @@ const maskedPanel = await sharp(panelCropped)
 
 await sharp(cardBuf)
   .composite([
-    { input: maskedPanel, top: PANEL_Y, left: PANEL_X },
-    { input: borderBuf, top: PANEL_Y, left: PANEL_X }
+    { input: maskedPanel, top: PANEL_Y, left: PANEL_X }
   ])
   .png()
   .toFile("blog_promo_image.png");
