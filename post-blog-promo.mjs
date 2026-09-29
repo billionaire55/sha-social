@@ -1,14 +1,39 @@
 // post-blog-promo.mjs
 // Posts a blog promo card to Facebook, X, LinkedIn, Instagram via Postproxy.
 // Called by blog-promo.yml after the promo image is generated and committed.
+//
+// FIXED (Sep 28 2026): FACEBOOK_PAGE_ID was "136127503142783" — the wrong
+// page ID (transposed digits), which means every blog promo to Facebook has
+// been failing with a page/permission error. Corrected to the confirmed ID
+// used by the daily social pipeline (Paramount Business Online Multiplex).
+// VERIFY this against Settings -> your Facebook page in the Postproxy
+// dashboard before relying on it — I can't call the Postproxy API to check.
+//
+// Also removed the unused PINTEREST_BOARD_ID constant (blog promos don't
+// post to Pinterest — it was declared but never referenced, which made it
+// look like Pinterest was covered when it isn't). If you want blog promos
+// on Pinterest too, say so and it's a small addition using the same board
+// ID your daily posts use.
+//
+// Also added: required-env-var checks (fails loudly instead of silently
+// sending a bad request if a secret is missing) and a try/catch around each
+// platform's fetch so one platform's network error can't crash the whole
+// run before the others get a chance to post.
 
-const FACEBOOK_PAGE_ID    = "136127503142783";
-const PINTEREST_BOARD_ID  = "1109011545681300939";
-const BASE_URL            = "https://api.postproxy.dev/api/posts";
+const FACEBOOK_PAGE_ID = "136127763142783"; // VERIFY against Postproxy dashboard
+const BASE_URL          = "https://api.postproxy.dev/api/posts";
 
 const title   = process.env.BLOG_TITLE   || "New Post";
 const blogUrl = process.env.BLOG_URL     || "https://blog.smarterhustleacademy.com";
 const repo    = process.env.GITHUB_REPOSITORY;
+
+if (!process.env.POSTPROXY_API_KEY) {
+  console.error("FATAL: POSTPROXY_API_KEY is not set (check repo secrets).");
+  process.exit(1);
+}
+if (!repo) {
+  console.warn("GITHUB_REPOSITORY not set — posts will go out with no image.");
+}
 
 const imageUrl = repo
   ? `https://raw.githubusercontent.com/${repo}/main/blog_promo_image.png`
@@ -44,23 +69,28 @@ async function post(platform) {
   };
   if (imageUrl) body.media = [imageUrl];
 
-  const res = await fetch(BASE_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${process.env.POSTPROXY_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
+  try {
+    const res = await fetch(BASE_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.POSTPROXY_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
 
-  if (!res.ok) {
-    console.error(`FAIL ${platform.id}: ${res.status} ${await res.text()}`);
-  } else {
-    const data = await res.json();
-    console.log(`POSTED ${platform.id} -> id ${data.id || "?"}`);
+    if (!res.ok) {
+      console.error(`FAIL ${platform.id}: ${res.status} ${await res.text()}`);
+    } else {
+      const data = await res.json();
+      console.log(`POSTED ${platform.id} -> id ${data.id || "?"}`);
+    }
+  } catch (e) {
+    console.error(`FAIL ${platform.id}: network error — ${e.message}`);
   }
 }
 
+let failures = 0;
 for (const platform of PLATFORMS) {
   await post(platform);
 }
