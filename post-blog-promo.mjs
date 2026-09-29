@@ -2,12 +2,14 @@
 // Posts a blog promo card to Facebook, X, LinkedIn, Instagram via Postproxy.
 // Called by blog-promo.yml after the promo image is generated and committed.
 //
-// FIXED (Sep 28 2026): FACEBOOK_PAGE_ID was "136127503142783" — the wrong
-// page ID (transposed digits), which means every blog promo to Facebook has
-// been failing with a page/permission error. Corrected to the confirmed ID
-// used by the daily social pipeline (Paramount Business Online Multiplex).
-// VERIFY this against Settings -> your Facebook page in the Postproxy
-// dashboard before relying on it — I can't call the Postproxy API to check.
+// CORRECTED (Sep 29 2026): a previous edit changed FACEBOOK_PAGE_ID to
+// "136127763142783" (the daily-social-pipeline page ID) on the assumption
+// that the old value was a typo. That was wrong — Postproxy's post history
+// confirms "136127503142783" has been publishing successfully to Facebook
+// via this exact script (posts on 9/27 and 9/28), and the article-42 run
+// with the changed ID silently failed to post to Facebook at all (Twitter,
+// LinkedIn and Instagram all posted fine; Facebook just never appeared in
+// Postproxy's history). Reverted to the confirmed-working ID.
 //
 // Also removed the unused PINTEREST_BOARD_ID constant (blog promos don't
 // post to Pinterest — it was declared but never referenced, which made it
@@ -20,7 +22,7 @@
 // platform's fetch so one platform's network error can't crash the whole
 // run before the others get a chance to post.
 
-const FACEBOOK_PAGE_ID = "136127763142783"; // VERIFY against Postproxy dashboard
+const FACEBOOK_PAGE_ID = "136127503142783"; // confirmed working via Postproxy post history
 const BASE_URL          = "https://api.postproxy.dev/api/posts";
 
 const title   = process.env.BLOG_TITLE   || "New Post";
