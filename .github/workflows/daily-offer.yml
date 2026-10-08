@@ -103,12 +103,18 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node post_to_socials.js
       - name: Flag borderless-image failure (fails loudly, after posting is already done)
-        if: steps.render_image.outputs.image_status == 'fallback'
+        if: always() && steps.render_image.outputs.image_status == 'fallback'
         run: |
-          echo "::error::Kie.ai failed to make today's borderless image, so the plain borderless fallback was posted. Open the 'kie-image-error' artifact on this run for the real error, and check kie.ai/billing for credits."
+          echo "=========== THE REAL KIE.AI IMAGE ERROR (screenshot this) ==========="
+          cat kie_image_error.json || echo "(no kie_image_error.json found)"
+          echo "======================================================================"
+          echo "::error::Kie.ai failed to make today's borderless image, so the plain borderless fallback was posted. The real error is printed in this step's log above. Also check kie.ai/billing for credits."
           exit 1
       - name: Verify video pipeline actually produced video (fails loudly, after posting is already done)
-        if: steps.render_video.outputs.video_status == 'failed'
+        if: always() && steps.render_video.outputs.video_status == 'failed'
         run: |
+          echo "=========== THE REAL KIE.AI VIDEO ERROR (screenshot this) ==========="
+          cat video_error.json || echo "(no video_error.json found)"
+          echo "======================================================================"
           echo "::error::Kie.ai failed to produce today_tiktok.mp4. Other platforms still posted today, but TikTok/YouTube got no fresh video. Check the 'video-error-log' artifact on this run for the actual API error, and check kie.ai/logs + kie.ai/billing for credit or task issues."
           exit 1
