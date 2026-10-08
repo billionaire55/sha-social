@@ -8,12 +8,13 @@
 // a poster/cover design), matching the "Your Hook Is the Whole Game" example
 // that worked well in testing.
 //
-// FALLBACK: if Kie.ai fails for any reason — no API key, timeout, task
-// failure, or text rendering that looks broken can't be detected
-// automatically — this falls back to the ORIGINAL bordered card design
-// (green header with headline, mascot panel, price badge, URL bar, green
-// footer with icons), using the static mascot image, so a day's post always
-// has a complete, legible image either way.
+// FALLBACK (updated Oct 6 2026): if Kie.ai fails, the script now retries
+// 3 times, then falls back to a BORDERLESS full-bleed image (static mascot
+// + headline/price on a soft gradient — no frames, bars, panels or icon
+// strips). The old bordered card is gone for good, so a Kie failure can no
+// longer silently put bordered pictures back on social. Every Kie failure
+// is also written to kie_image_error.json and surfaced as a red ::error::
+// annotation, and the workflow fails loudly AFTER posting is done.
 //
 // NOTE: AI image models are inherently less reliable than the old
 // SVG-rendered text at getting exact price/headline text correct every
@@ -65,166 +66,57 @@ function dotGrid(x, y, w, h, spacing, r, color, opacity) {
   return dots.join("");
 }
 
-// --- FALLBACK ONLY: the original bordered-card design -------------------
-// Used only when Kie.ai is unavailable or fails. Kept exactly as before so
-// the fallback is proven/reliable.
 
-const HEADER_H = 460;
-const FOOTER_H = 120;
-const PAD = 64;
-const PANEL_X = PAD;
-const PANEL_Y = HEADER_H + 40;
-const PANEL_W = 420;
-const PANEL_H = 560;
-const COL_X = PANEL_X + PANEL_W + 40;
-const COL_W = W - COL_X - PAD;
-
-function baseCardSvg(p) {
+// --- FALLBACK: borderless full-bleed image (no frames, bars or panels) ----
+function fallbackOverlaySvg(p) {
   const headline = p.graphic_headline || p._meta.product;
-  const subline  = p.graphic_subline  || "";
-  const price    = p._meta.price === "$0" ? "FREE" : p._meta.price;
-  const url      = "smarterhustleacademy.com";
-
-  const hLines = wrap(headline, 22);
-  const H_FONT = hLines.length > 2 ? 54 : hLines.length === 2 ? 62 : 72;
-  const H_LH   = H_FONT + 12;
-  const H_START = 170 + (HEADER_H - 170 - hLines.length * H_LH) / 2 + H_LH;
-
-  const sLines = wrap(subline, 18);
-  const S_FONT = 34;
-  const S_LH   = 46;
-
-  const SUBLINE_Y = PANEL_Y + 50;
-  const PRICE_Y   = SUBLINE_Y + (sLines.length * S_LH) + 36;
-  const PRICE_H   = 90;
-  const PRICE_W   = Math.min(COL_W, price === "FREE" ? 240 : 200);
-
-  const DESC_Y = PANEL_Y + PANEL_H + 40;
-  const URL_Y  = DESC_Y + 46;
-  const URL_H  = 64;
-
-  const footerIcons = [
-    { label: "GUIDES",     cx: 130 },
-    { label: "AI TOOLS",   cx: 370 },
-    { label: "BUNDLES",    cx: 610 },
-    { label: "FREE NICHE", cx: 870 },
-  ].map(ic => `
-    <circle cx="${ic.cx}" cy="${H - FOOTER_H/2 - 8}" r="24"
-      fill="none" stroke="${GOLD}" stroke-width="2.5"/>
-    <text x="${ic.cx}" y="${H - FOOTER_H/2 + 26}"
-      text-anchor="middle"
-      font-family="Arial,Helvetica,sans-serif" font-size="20" font-weight="700"
-      fill="${GOLD}" letter-spacing="1">${esc(ic.label)}</text>
-  `).join("");
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-  <defs>
-    <linearGradient id="hdrGrad" x1="0" y1="0" x2="0.2" y2="1">
-      <stop offset="0%" stop-color="${GREEN_DARK}"/>
-      <stop offset="100%" stop-color="${GREEN_MID}"/>
-    </linearGradient>
-    <linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%"   stop-color="${GOLD}"/>
-      <stop offset="50%"  stop-color="${GOLD_LIGHT}"/>
-      <stop offset="100%" stop-color="${GOLD}"/>
-    </linearGradient>
-    <filter id="shadow">
-      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity="0.22"/>
-    </filter>
-    <filter id="goldGlow">
-      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="${GOLD}" flood-opacity="0.5"/>
-    </filter>
-  </defs>
-
-  <rect width="${W}" height="${H}" fill="${CREAM}"/>
-  <rect x="10" y="10" width="${W-20}" height="${H-20}"
-    rx="16" fill="none" stroke="${GOLD}" stroke-width="2.5" opacity="0.55"/>
-  <rect x="0" y="0" width="${W}" height="${HEADER_H}" fill="url(#hdrGrad)"/>
-  ${dotGrid(0, 0, W, HEADER_H, 28, 2.2, "#ffffff", 0.065)}
-  <rect x="0" y="0" width="${W}" height="5" fill="url(#goldGrad)"/>
-
-  <text x="${W/2}" y="60" text-anchor="middle"
-    font-family="Arial,Helvetica,sans-serif" font-size="24" font-weight="700"
-    fill="${CREAM}" letter-spacing="5" opacity="0.92">SMARTER HUSTLE ACADEMY™</text>
-  <rect x="${W/2 - 150}" y="74" width="300" height="2"
-    fill="url(#goldGrad)" opacity="0.75"/>
-
-  <text x="${W/2}" y="${H_START}" text-anchor="middle"
-    font-family="Arial,Helvetica,sans-serif" font-size="${H_FONT}"
-    font-weight="900" fill="${CREAM}" letter-spacing="-1">
-    ${hLines.map((l,i)=>`<tspan x="${W/2}" dy="${i===0?0:H_LH}">${esc(l)}</tspan>`).join("")}
-  </text>
-
-  <path d="M0,${HEADER_H} Q${W/2},${HEADER_H+44} ${W},${HEADER_H}"
-    fill="none" stroke="url(#goldGrad)" stroke-width="3"/>
-
-  ${subline ? `<text x="${COL_X}" y="${SUBLINE_Y + S_FONT}"
-    font-family="Arial,Helvetica,sans-serif" font-size="${S_FONT}" font-weight="600"
-    fill="${GREEN_DARK}">
-    ${sLines.map((l,i)=>`<tspan x="${COL_X}" dy="${i===0?0:S_LH}">${esc(l)}</tspan>`).join("")}
-  </text>` : ""}
-
-  <rect x="${COL_X}" y="${PRICE_Y}" width="${PRICE_W}" height="${PRICE_H}"
-    rx="12" fill="${GREEN}" filter="url(#shadow)"/>
-  <rect x="${COL_X+3}" y="${PRICE_Y+3}" width="${PRICE_W-6}" height="${PRICE_H-6}"
-    rx="10" fill="none" stroke="${GOLD}" stroke-width="2.5"/>
-  <text x="${COL_X + PRICE_W/2}" y="${PRICE_Y + 60}"
-    text-anchor="middle"
-    font-family="Arial,Helvetica,sans-serif" font-size="46" font-weight="900"
-    fill="${GOLD}" filter="url(#goldGlow)">${esc(price)}</text>
-
-  <text x="${PAD}" y="${DESC_Y}"
-    font-family="Arial,Helvetica,sans-serif" font-size="32" font-weight="400"
-    fill="${GREY}">One-time. Yours forever. No subscription.</text>
-
-  <rect x="${PAD}" y="${URL_Y}" width="${W - PAD*2}" height="${URL_H}"
-    rx="12" fill="${GREEN}" filter="url(#shadow)"/>
-  <rect x="${PAD+3}" y="${URL_Y+3}" width="${W - PAD*2 - 6}" height="${URL_H-6}"
-    rx="10" fill="none" stroke="${GOLD}" stroke-width="2"/>
-  <text x="${W/2}" y="${URL_Y + 52}"
-    text-anchor="middle"
-    font-family="Arial,Helvetica,sans-serif" font-size="34" font-weight="700"
-    fill="${CREAM}">${esc(url)}</text>
-
-  <rect x="0" y="${H - FOOTER_H}" width="${W}" height="${FOOTER_H}" fill="${GREEN_DARK}"/>
-  <rect x="0" y="${H - FOOTER_H}" width="${W}" height="3" fill="url(#goldGrad)"/>
-  ${footerIcons}
-</svg>`;
-}
-
-function panelMaskSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PANEL_W}" height="${PANEL_H}">
-    <rect x="0" y="0" width="${PANEL_W}" height="${PANEL_H}" rx="20" fill="#fff"/>
+  const priceText = p._meta.price === "$0" ? "FREE" : p._meta.price;
+  const lines = wrap(headline, 22).slice(0, 3);
+  const lineH = 92;
+  const blockH = lines.length * lineH;
+  const startY = H - 250 - blockH + lineH - 20;
+  const text = lines.map((l, i) =>
+    `<text x="${W/2}" y="${startY + i * lineH}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+      font-size="78" font-weight="800" fill="${CREAM}">${esc(l)}</text>`).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+    <defs>
+      <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${GREEN_DARK}" stop-opacity="0"/>
+        <stop offset="0.4" stop-color="${GREEN_DARK}" stop-opacity="0.78"/>
+        <stop offset="1" stop-color="${GREEN_DARK}" stop-opacity="0.96"/>
+      </linearGradient>
+    </defs>
+    <rect x="0" y="${H - 820}" width="${W}" height="820" fill="url(#fade)"/>
+    ${text}
+    <text x="${W/2}" y="${H - 135}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+      font-size="84" font-weight="800" fill="${GOLD_LIGHT}">${esc(priceText)}</text>
+    <text x="${W/2}" y="${H - 60}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+      font-size="40" font-weight="600" fill="${CREAM}">smarterhustleacademy.com</text>
   </svg>`;
 }
 
-function panelBorderSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PANEL_W}" height="${PANEL_H}">
-    <rect x="2" y="2" width="${PANEL_W-4}" height="${PANEL_H-4}" rx="18"
-      fill="none" stroke="${GOLD}" stroke-width="5"/>
-  </svg>`;
-}
-
-async function renderFallbackCard(p) {
-  console.log("Rendering fallback bordered card (static mascot)...");
-  const cardBuf = await sharp(Buffer.from(baseCardSvg(p))).png().toBuffer();
-  const mascotCropped = await sharp(MASCOT_PATH)
-    .resize(PANEL_W, PANEL_H, { fit: "cover", position: "top" })
+async function renderFallbackImage(p) {
+  console.log("Rendering BORDERLESS fallback image (static mascot, no frames)...");
+  const base = await sharp(MASCOT_PATH)
+    .resize(W, H, { fit: "cover", position: "top" })
     .toBuffer();
-  const maskBuf = await sharp(Buffer.from(panelMaskSvg())).png().toBuffer();
-  const borderBuf = await sharp(Buffer.from(panelBorderSvg())).png().toBuffer();
-  const maskedMascot = await sharp(mascotCropped)
-    .composite([{ input: maskBuf, blend: "dest-in" }])
-    .png()
-    .toBuffer();
-  await sharp(cardBuf)
-    .composite([
-      { input: maskedMascot, top: PANEL_Y, left: PANEL_X },
-      { input: borderBuf, top: PANEL_Y, left: PANEL_X }
-    ])
+  await sharp(base)
+    .composite([{ input: Buffer.from(fallbackOverlaySvg(p)), top: 0, left: 0 }])
     .png()
     .toFile("today_image.png");
-  console.log("Wrote today_image.png — fallback bordered card with mascot panel");
+  console.log("Wrote today_image.png — borderless fallback");
+}
+
+function setOutput(key, value) {
+  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
+}
+
+function recordKieFailure(reason) {
+  fs.writeFileSync("kie_image_error.json", JSON.stringify({
+    time: new Date().toISOString(), reason
+  }, null, 2));
+  console.log(`::error::Kie.ai borderless image failed — borderless fallback used instead. Reason: ${reason}`);
+  setOutput("image_status", "fallback");
 }
 
 // --- PRIMARY: full-bleed Kie.ai image -----------------------------------
@@ -368,16 +260,26 @@ async function main() {
   }
 
   if (!process.env.KIE_API_KEY) {
-    console.log("KIE_API_KEY not set — using the fallback bordered card.");
-    return renderFallbackCard(p);
+    recordKieFailure("KIE_API_KEY secret is not set");
+    return renderFallbackImage(p);
   }
 
-  try {
-    await renderFullKieImage(p);
-  } catch (e) {
-    console.warn(`Full Kie.ai image generation failed (${e.message}) — falling back to the bordered card.`);
-    await renderFallbackCard(p);
+  const ATTEMPTS = 3;
+  let lastErr = "unknown";
+  for (let i = 1; i <= ATTEMPTS; i++) {
+    try {
+      console.log(`Kie.ai image attempt ${i}/${ATTEMPTS}...`);
+      await renderFullKieImage(p);
+      setOutput("image_status", "kie_success");
+      return;
+    } catch (e) {
+      lastErr = e.message;
+      console.warn(`Attempt ${i} failed: ${lastErr}`);
+      if (i < ATTEMPTS) await new Promise(r => setTimeout(r, 20000 * i));
+    }
   }
+  recordKieFailure(lastErr);
+  await renderFallbackImage(p);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
