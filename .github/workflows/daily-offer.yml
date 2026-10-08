@@ -27,10 +27,19 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: node generate_posts.js
       - name: Render the branded offer image
+        id: render_image
         env:
           KIE_API_KEY: ${{ secrets.KIE_API_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node generate_image.js
+      - name: Upload Kie.ai image error log (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kie-image-error-${{ github.run_id }}
+          path: kie_image_error.json
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Restore Kie.ai scene cache
         uses: actions/cache@v4
         with:
@@ -84,6 +93,11 @@ jobs:
           POSTPROXY_API_KEY: ${{ secrets.POSTPROXY_API_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node post_to_socials.js
+      - name: Flag borderless-image failure (fails loudly, after posting is already done)
+        if: steps.render_image.outputs.image_status == 'fallback'
+        run: |
+          echo "::error::Kie.ai failed to make today's borderless image, so the plain borderless fallback was posted. Open the 'kie-image-error' artifact on this run for the real error, and check kie.ai/billing for credits."
+          exit 1
       - name: Verify video pipeline actually produced video (fails loudly, after posting is already done)
         if: steps.render_video.outputs.video_status == 'failed'
         run: |
