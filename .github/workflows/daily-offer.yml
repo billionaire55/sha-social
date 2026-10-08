@@ -47,6 +47,15 @@ jobs:
           key: tiktok-kie-cache-${{ hashFiles('today_posts.json') }}
           restore-keys: |
             tiktok-kie-cache-
+      - name: Delete yesterday's video so a failed render can never repost it
+        run: |
+          # FIXED (Oct 8 2026): today_tiktok.mp4 is committed to the repo, so
+          # when Kie.ai failed to render a new video the OLD file was still
+          # there and got posted to TikTok/YouTube with the new day's caption.
+          # Remove it (and any old error log) BEFORE rendering. If rendering
+          # fails there is now simply no video, and post_to_socials.js skips
+          # TikTok/YouTube instead of posting the wrong video.
+          rm -f today_tiktok.mp4 video_error.json
       - name: Render mascot video (TikTok/YouTube)
         id: render_video
         env:
